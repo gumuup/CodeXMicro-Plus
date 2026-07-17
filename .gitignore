@@ -1,0 +1,29 @@
+# Swift build output
+.build/
+
+# Release artifacts (published through GitHub Releases)
+dist/
+
+# macOS / Xcode
+.DS_Store
+*.xcuserstate
+*.xccheckout
+xcuserdata/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.keychain
+*.keychain-db
+*.p12
+*.mobileprovision
+
+# Logs and coverage
+*.log
+coverage/

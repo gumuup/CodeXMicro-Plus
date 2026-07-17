@@ -1,0 +1,369 @@
+import SwiftUI
+
+struct MicroPadView: View {
+    let store: CodexStore
+    let closePanel: () -> Void
+
+    private let designSize: CGFloat = 438
+
+    var body: some View {
+        GeometryReader { geometry in
+            let scale = min(geometry.size.width, geometry.size.height) / designSize
+
+            MicroPadSurface(store: store, closePanel: closePanel)
+                .environment(\.microLayoutScale, scale)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .background(Color.clear)
+    }
+}
+
+private struct MicroPadSurface: View {
+    @ObservedObject var store: CodexStore
+    let closePanel: () -> Void
+
+    @Environment(\.microLayoutScale) private var layoutScale
+
+    @State private var isToolboxPresented = false
+    @State private var hoveredCommand: MicroAction?
+
+    private var keySize: CGFloat { scaled(76) }
+    private var spacing: CGFloat { scaled(10) }
+    private var designSize: CGFloat { scaled(438) }
+
+    var body: some View {
+        panelContent
+    }
+
+    private var panelContent: some View {
+        ZStack {
+            enclosure
+
+            VStack(spacing: spacing) {
+                HStack(spacing: spacing) {
+                    JoystickView(onTrigger: store.performJoystick, onDetent: store.joystickDetent)
+                    AgentKeyView(index: 0, task: store.task(at: 0), labelsVisible: store.labelsVisible) { store.openTask(at: 0) }
+                    AgentKeyView(index: 1, task: store.task(at: 1), labelsVisible: store.labelsVisible) { store.openTask(at: 1) }
+                    ReasoningDialView(level: store.reasoningLevel, onAdjust: store.adjustReasoning)
+                }
+                .frame(height: keySize)
+
+                HStack(spacing: spacing) {
+                    ForEach(2..<6, id: \.self) { index in
+                        AgentKeyView(index: index, task: store.task(at: index), labelsVisible: store.labelsVisible) { store.openTask(at: index) }
+                    }
+                }
+                .frame(height: keySize)
+
+                HStack(spacing: spacing) {
+                    commandKey(.fast, icon: "bolt.fill", title: "FAST")
+                    commandKey(.approve, icon: "checkmark.circle", title: "同意")
+                    commandKey(.decline, icon: "xmark.circle", title: "拒绝")
+                    commandKey(.newTask, icon: "arrow.up.right.square", title: "新任务")
+                }
+                .frame(height: keySize)
+
+                HStack(spacing: spacing) {
+                    touchSensor
+                        .frame(width: keySize, height: keySize)
+                    VoiceKeyView(
+                        isActive: store.isVoicePressed,
+                        labelsVisible: store.labelsVisible,
+                        onPress: store.beginVoice,
+                        onRelease: store.endVoice
+                    )
+                    .frame(width: keySize * 2 + spacing, height: keySize)
+                    Button { store.activateCodexStatusButton() } label: {
+                        codexStatusGlyph
+                    }
+                        .buttonStyle(MechanicalKeyStyle(glow: .indigo))
+                        .frame(width: keySize, height: keySize)
+                        .help(codexStatusHelp)
+                        .accessibilityLabel(codexStatusHelp)
+                }
+                .frame(height: keySize)
+            }
+            .frame(width: keySize * 4 + spacing * 3)
+            .offset(y: -scaled(1))
+
+            sideLabels
+            moveHandles
+            screwHeads
+            chromeControls
+            feedbackToast
+        }
+        .frame(width: designSize, height: designSize)
+        .background(Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: scaled(68), style: .continuous))
+        .overlay { resizeHandles }
+    }
+
+    private var moveHandles: some View {
+        VStack {
+            PanelDragRegion()
+                .frame(width: scaled(150), height: scaled(22))
+            Spacer()
+            PanelDragRegion()
+                .frame(width: scaled(150), height: scaled(22))
+        }
+        .padding(.vertical, scaled(2))
+    }
+
+    private var resizeHandles: some View {
+        VStack {
+            HStack {
+                PanelResizeHandle(corner: .topLeft)
+                    .frame(width: scaled(34), height: scaled(34))
+                Spacer()
+                PanelResizeHandle(corner: .topRight)
+                    .frame(width: scaled(34), height: scaled(34))
+            }
+            Spacer()
+            HStack {
+                PanelResizeHandle(corner: .bottomLeft)
+                    .frame(width: scaled(34), height: scaled(34))
+                Spacer()
+                PanelResizeHandle(corner: .bottomRight)
+                    .frame(width: scaled(34), height: scaled(34))
+            }
+        }
+        .frame(width: designSize - scaled(8), height: designSize - scaled(8))
+        .allowsHitTesting(true)
+    }
+
+    private var enclosure: some View {
+        let outerShape = RoundedRectangle(cornerRadius: scaled(62), style: .continuous)
+
+        return ZStack {
+            outerShape
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    outerShape
+                        .fill(
+                            LinearGradient(
+                                colors: [.white.opacity(0.55), Color(red: 0.75, green: 0.80, blue: 0.88).opacity(0.22)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .overlay { outerShape.strokeBorder(.white.opacity(0.76), lineWidth: scaled(2)) }
+
+            RoundedRectangle(cornerRadius: scaled(42), style: .continuous)
+                .fill(.white.opacity(0.15))
+                .overlay { RoundedRectangle(cornerRadius: scaled(42)).strokeBorder(.white.opacity(0.82), lineWidth: scaled(1.4)) }
+                .padding(scaled(21))
+                .shadow(color: .white.opacity(0.7), radius: scaled(10))
+        }
+        .clipShape(outerShape)
+        .padding(scaled(6))
+        .shadow(color: .black.opacity(0.20), radius: scaled(14), y: scaled(8))
+    }
+
+    private func commandKey(_ action: MicroAction, icon: String, title: String) -> some View {
+        let isDecision = action == .approve || action == .decline
+        let isHovered = hoveredCommand == action
+        let hoverColor: Color = action == .approve ? .green : .red
+
+        return Button { store.perform(action) } label: {
+            KeyGlyph(
+                systemName: icon,
+                title: store.labelsVisible ? title : nil,
+                activeGlow: action == .fast && store.isFastModeEnabled ? .yellow : nil
+            )
+        }
+        .buttonStyle(
+            MechanicalKeyStyle(
+                bottomGlow: hoverColor,
+                showsBottomGlow: isDecision && isHovered
+            )
+        )
+        .frame(width: keySize, height: keySize)
+        .onHover { isInside in
+            guard isDecision else { return }
+            if isInside {
+                guard hoveredCommand != action else { return }
+                hoveredCommand = action
+                store.hoverDetent()
+            } else if hoveredCommand == action {
+                hoveredCommand = nil
+            }
+        }
+        .accessibilityLabel(
+            action == .fast
+                ? (store.isFastModeEnabled ? "关闭 Fast 模式" : "启用 Fast 模式")
+                : action.accessibilityLabel
+        )
+    }
+
+    private var touchSensor: some View {
+        Button(action: store.toggleLayer) {
+            ZStack {
+                Circle()
+                    .fill(RadialGradient(colors: [.black, Color(red: 0.15, green: 0.16, blue: 0.18)], center: .center, startRadius: scaled(1), endRadius: scaled(27)))
+                    .frame(width: scaled(44), height: scaled(44))
+                    .overlay { Circle().strokeBorder(.white.opacity(0.5), lineWidth: scaled(2)) }
+                    .shadow(color: .black.opacity(0.32), radius: scaled(4), y: scaled(3))
+                Image(systemName: store.labelsVisible ? "eye.fill" : "eye.slash.fill")
+                    .font(.system(size: scaled(18), weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+        }
+        .buttonStyle(.plain)
+        .help(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
+        .accessibilityLabel(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
+    }
+
+    @ViewBuilder private var codexStatusGlyph: some View {
+        if store.isCodexRunning {
+            switch store.codexUsageMetric {
+            case .weeklyRemaining:
+                let remaining = store.weeklyQuota?.remainingPercent
+                let color = quotaColor(for: remaining)
+                ZStack {
+                    quotaRing(progress: CGFloat(remaining ?? 0) / 100, color: color)
+                    VStack(spacing: -scaled(1)) {
+                        Text(remaining.map { "\($0)%" } ?? "--")
+                            .font(.system(size: scaled(14), weight: .heavy, design: .rounded))
+                        Text("周剩余")
+                            .font(.system(size: scaled(7), weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.black.opacity(0.78))
+                }
+            case .lifetimeConsumed:
+                ZStack {
+                    quotaRing(progress: store.lifetimeTokens == nil ? 0 : 1, color: .indigo)
+                    VStack(spacing: -scaled(1)) {
+                        Text(TokenCountFormatter.compact(store.lifetimeTokens))
+                            .font(.system(size: scaled(11), weight: .heavy, design: .rounded))
+                        Text("累计消耗")
+                            .font(.system(size: scaled(7), weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.black.opacity(0.78))
+                }
+            }
+        } else {
+            CodexMarkView().scaleEffect(0.63)
+        }
+    }
+
+    private var codexStatusHelp: String {
+        guard store.isCodexRunning else { return "打开 Codex" }
+    switch store.codexUsageMetric {
+    case .weeklyRemaining:
+        guard let quota = store.weeklyQuota else {
+            return "本周剩余 Token 读取中，点击查看累计 Token 消耗"
+        }
+            let resetText = quota.resetsAt.map {
+                "，\($0.formatted(date: .abbreviated, time: .shortened)) 重置"
+            } ?? ""
+        return "本周剩余 \(quota.remainingPercent)% Token\(resetText)；点击查看累计 Token 消耗"
+        case .lifetimeConsumed:
+            return "累计消耗 \(TokenCountFormatter.full(store.lifetimeTokens)) Token；点击查看本周剩余额度"
+        }
+    }
+
+    private func quotaRing(progress: CGFloat, color: Color) -> some View {
+        ZStack {
+            Circle()
+                .stroke(.white.opacity(0.32), lineWidth: scaled(5))
+            Circle()
+                .trim(from: 0, to: min(max(progress, 0), 1))
+                .stroke(color, style: StrokeStyle(lineWidth: scaled(5), lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .shadow(color: color.opacity(0.55), radius: scaled(5))
+        }
+        .frame(width: scaled(48), height: scaled(48))
+    }
+
+    private func quotaColor(for remaining: Int?) -> Color {
+        guard let remaining else { return .gray }
+        if remaining <= 20 { return .red }
+        if remaining <= 45 { return .orange }
+        return .green
+    }
+
+    private var sideLabels: some View {
+        Group {
+            Text("Work Louder | OpenAI | 2026")
+                .rotationEffect(.degrees(-90))
+                .offset(x: -scaled(201))
+            Text("You can just build things")
+                .rotationEffect(.degrees(90))
+                .offset(x: scaled(201))
+            Text("Let's build")
+                .offset(y: scaled(202))
+        }
+        .font(.system(size: scaled(8.5), weight: .medium, design: .rounded))
+        .foregroundStyle(.black.opacity(0.56))
+    }
+
+    private var screwHeads: some View {
+        ForEach(Array(screwOffsets.enumerated()), id: \.offset) { _, offset in
+            ZStack {
+                Circle().fill(LinearGradient(colors: [.gray, .black], startPoint: .topLeading, endPoint: .bottomTrailing))
+                Capsule().fill(.black.opacity(0.75)).frame(width: scaled(10), height: scaled(2)).rotationEffect(.degrees(45))
+            }
+            .frame(width: scaled(17), height: scaled(17))
+            .shadow(color: .black.opacity(0.35), radius: scaled(2), y: scaled(2))
+            .offset(offset)
+        }
+    }
+
+    private var chromeControls: some View {
+        HStack(spacing: scaled(6)) {
+            Button {
+                isToolboxPresented.toggle()
+            } label: {
+                Image(systemName: "shippingbox.fill")
+            }
+            .help("打开 Codex 工具箱")
+            .accessibilityLabel("打开 Codex 工具箱")
+            .popover(isPresented: $isToolboxPresented, arrowEdge: .top) {
+                ToolboxView { action in
+                    isToolboxPresented = false
+                    store.perform(action)
+                }
+            }
+            SettingsLink {
+                Image(systemName: "gearshape.fill")
+            }
+            Button(action: closePanel) {
+                Image(systemName: "xmark")
+            }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: scaled(10), weight: .bold))
+        .foregroundStyle(.black.opacity(0.42))
+        .padding(scaled(8))
+        .background(.thinMaterial, in: Capsule())
+        .offset(x: scaled(145), y: -scaled(188))
+        .opacity(0.72)
+    }
+
+    @ViewBuilder private var feedbackToast: some View {
+        if let message = store.feedbackMessage {
+            Text(message)
+                .font(.system(size: scaled(11), weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, scaled(12))
+                .padding(.vertical, scaled(7))
+                .background(.black.opacity(0.78), in: Capsule())
+                .shadow(radius: scaled(8))
+                .offset(y: -scaled(201))
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .animation(.spring(response: 0.25), value: message)
+        }
+    }
+
+    private var screwOffsets: [CGSize] {
+        [
+            CGSize(width: -scaled(181), height: -scaled(181)), CGSize(width: scaled(181), height: -scaled(181)),
+            CGSize(width: -scaled(181), height: scaled(181)), CGSize(width: scaled(181), height: scaled(181))
+        ]
+    }
+
+    private func scaled(_ value: CGFloat) -> CGFloat {
+        value * layoutScale
+    }
+}

@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-14
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build app
+        run: swift build
+      - name: Run native tests
+        run: ./script/test_native.sh

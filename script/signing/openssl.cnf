@@ -1,0 +1,15 @@
+[ req ]
+distinguished_name = subject
+prompt = no
+x509_extensions = codesign
+
+[ subject ]
+CN = CodexMicro Local Development
+O = gumu.local
+
+[ codesign ]
+basicConstraints = critical, CA:false
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer

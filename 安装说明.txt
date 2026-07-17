@@ -1,0 +1,26 @@
+CodeXMicro++ 1.1.1 安装说明 / Installation Guide
+================================================
+
+系统要求 / Requirements
+- macOS 14 或更高版本 / macOS 14 or later
+- 支持 Apple Silicon 与 Intel Mac / Universal: Apple Silicon and Intel
+- 需要已安装 Codex 桌面应用 / The Codex desktop app must be installed
+
+安装 / Install
+1. 将 CodeXMicro++.app 拖到“应用程序 Applications”。
+2. 首次打开时，在 Finder 的“应用程序”中按住 Control 点击 CodeXMicro++，选择“打开”。
+3. 按提示进入“系统设置 → 隐私与安全性 → 辅助功能”，允许 CodeXMicro++。
+4. 重新打开 CodeXMicro++。
+
+1. Drag CodeXMicro++.app onto “应用程序 Applications”.
+2. On first launch, Control-click CodeXMicro++ in Applications and choose Open.
+3. In System Settings → Privacy & Security → Accessibility, allow CodeXMicro++.
+4. Reopen CodeXMicro++.
+
+说明 / Note
+当前安装包未经过 Apple 公证，因此首次打开会出现安全提示；Control-click → Open
+只需要执行一次。后续如使用 Apple Developer ID 签名并完成公证，可消除此提示。
+
+This build is not Apple-notarized, so macOS shows a security warning on first
+launch. Control-click → Open is required once. A future Developer ID notarized
+build can remove this warning.
