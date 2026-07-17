@@ -11,7 +11,7 @@
 ## 本地开发
 
 ```bash
-git clone https://github.com/gumuup/CodeXMicro.git
+git clone https://github.com/gumuup/CodeXMicro-Plus.git
 cd CodeXMicro
 swift build
 ./script/test_native.sh
