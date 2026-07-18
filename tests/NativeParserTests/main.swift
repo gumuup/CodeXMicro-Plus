@@ -37,6 +37,12 @@ let parsedQuota = CodexRolloutParser.weeklyQuota(from: weeklyQuota)
 precondition(parsedQuota?.remainingPercent == 68)
 precondition(parsedQuota?.resetsAt?.timeIntervalSince1970 == 1_784_682_204)
 
+let mixedQuotaLimits = lines(
+    #"{"timestamp":"2026-07-17T08:00:00.123Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":23.0,"window_minutes":10080,"resets_at":1784682204}}}}"#,
+    #"{"timestamp":"2026-07-17T08:01:00.123Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex_bengalfox","primary":{"used_percent":0.0,"window_minutes":10080,"resets_at":1784682304}}}}"#
+)
+precondition(CodexRolloutParser.weeklyQuota(from: mixedQuotaLimits)?.remainingPercent == 77)
+
 let liveQuotaResponse = lines(
     #"{"id":2,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":59,"windowDurationMins":10080,"resetsAt":1784781374}},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":59,"windowDurationMins":10080,"resetsAt":1784781374}}}}}"#
 )
@@ -53,6 +59,13 @@ let liveUsageResponse = lines(
 precondition(CodexRolloutParser.liveLifetimeTokens(from: liveUsageResponse) == 7_694_763_639)
 precondition(TokenCountFormatter.compact(7_694_763_639) == "76.9亿")
 precondition(TokenCountFormatter.full(7_694_763_639).replacingOccurrences(of: ",", with: "") == "7694763639")
+
+let largeProcessOutput = ProcessOutputReader.run(
+    executableURL: URL(fileURLWithPath: "/usr/bin/jot"),
+    arguments: ["-b", "x", "70000"]
+)
+precondition(largeProcessOutput?.status == 0)
+precondition(largeProcessOutput?.data.count == 140_000)
 
 precondition(DialStepResolver.tapStep(at: 19, width: 76) == -1)
 precondition(DialStepResolver.tapStep(at: 57, width: 76) == 1)
@@ -86,4 +99,4 @@ let prSearchResults = ToolboxAction.allCases.filter { $0.searchText.contains("pr
 precondition(prSearchResults.contains("创建 PR"))
 precondition(prSearchResults.contains("审查 PR"))
 
-print("Codex rollout parser, dial interaction, panel resize, and toolbox catalog: PASS")
+print("Codex rollout parser, process output, dial interaction, panel resize, and toolbox catalog: PASS")

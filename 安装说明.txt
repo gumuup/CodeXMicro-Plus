@@ -1,4 +1,4 @@
-CodeXMicro++ 1.1.1 安装说明 / Installation Guide
+CodeXMicro++ 1.1.2 安装说明 / Installation Guide
 ================================================
 
 系统要求 / Requirements

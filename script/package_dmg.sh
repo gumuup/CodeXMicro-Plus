@@ -5,7 +5,7 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 DISPLAY_NAME="CodeXMicro++"
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="${CODEX_MICRO_VERSION:-1.1.1}"
+VERSION="${CODEX_MICRO_VERSION:-1.1.2}"
 MIN_SYSTEM_VERSION="14.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -57,7 +57,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>CodeXMicro++</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>CFBundleIconFile</key><string>AppIcon.png</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key><true/>

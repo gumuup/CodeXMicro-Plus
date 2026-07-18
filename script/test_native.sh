@@ -14,6 +14,7 @@ xcrun swiftc \
   Sources/CodeXMicroApp/Models/ToolboxAction.swift \
   Sources/CodeXMicroApp/Support/DialStepResolver.swift \
   Sources/CodeXMicroApp/Support/PanelResizeHandle.swift \
+  Sources/CodeXMicroApp/Support/ProcessOutputReader.swift \
   Sources/CodeXMicroApp/Support/CodexRolloutParser.swift \
   tests/NativeParserTests/main.swift \
   -o "$TEST_BINARY"

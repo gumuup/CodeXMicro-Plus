@@ -170,7 +170,7 @@ actor CodexStateService {
                 }
                 return data
             }
-            let initialize = #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codexmicro-plus-plus","version":"1.1.1"}}}"# + "\n"
+            let initialize = #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codexmicro-plus-plus","version":"1.1.2"}}}"# + "\n"
             input.fileHandleForWriting.write(Data(initialize.utf8))
 
             let waitResult = await waitForTermination(terminationEvents, timeout: .seconds(5))
@@ -289,20 +289,11 @@ actor CodexStateService {
     }
 
     private func runSQLite(database: URL, sql: String) -> Data? {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = ["-json", database.path, sql]
-        process.standardOutput = output
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            return output.fileHandleForReading.readDataToEndOfFile()
-        } catch {
-            return nil
-        }
+        guard let result = ProcessOutputReader.run(
+            executableURL: URL(fileURLWithPath: "/usr/bin/sqlite3"),
+            arguments: ["-json", database.path, sql]
+        ), result.status == 0 else { return nil }
+        return result.data
     }
 
     private func tail(of url: URL, maximumBytes: Int) -> Data? {

@@ -66,6 +66,7 @@ enum CodexRolloutParser {
             guard let object = try? JSONSerialization.jsonObject(with: Data(rawLine)) as? [String: Any],
                   let payload = object["payload"] as? [String: Any],
                   let rateLimits = payload["rate_limits"] as? [String: Any],
+                  (rateLimits["limit_id"] as? String).map({ $0 == "codex" }) ?? true,
                   let primary = rateLimits["primary"] as? [String: Any],
                   let windowMinutes = number(primary["window_minutes"]),
                   Int(windowMinutes) == 10_080,
