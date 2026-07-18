@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 final class FloatingPanel: NSPanel {
@@ -35,11 +36,22 @@ final class TransparentHostingView<Content: View>: NSHostingView<Content> {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = CodexStore()
     private var panel: FloatingPanel?
+    private var panelPositionCancellable: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         createPanel()
+        panelPositionCancellable = store.$panelPosition
+            .removeDuplicates()
+            .sink { [weak self] position in
+                self?.applyPanelPosition(position)
+            }
         store.start()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showPanel()
+        return true
     }
 
     func showPanel() {
@@ -62,8 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
-        panel.isFloatingPanel = true
+        configurePanelLevel(panel, for: store.panelPosition)
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.isOpaque = false
@@ -84,6 +95,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         panel.orderFrontRegardless()
         self.panel = panel
+    }
+
+    private func applyPanelPosition(_ position: PanelPosition) {
+        guard let panel else { return }
+        let wasVisible = panel.isVisible
+        configurePanelLevel(panel, for: position)
+        if wasVisible {
+            panel.orderFrontRegardless()
+        }
+    }
+
+    private func configurePanelLevel(_ panel: FloatingPanel, for position: PanelPosition) {
+        switch position {
+        case .top:
+            panel.isFloatingPanel = true
+            panel.level = .floating
+        case .bottom:
+            panel.isFloatingPanel = false
+            let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow)) + 1
+            panel.level = NSWindow.Level(rawValue: desktopLevel)
+        }
     }
 }
 

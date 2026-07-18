@@ -21,10 +21,14 @@ final class CodexStore: ObservableObject {
     @Published var keySoundEnabled: Bool {
         didSet { UserDefaults.standard.set(keySoundEnabled, forKey: Keys.keySound) }
     }
+    @Published var panelPosition: PanelPosition {
+        didSet { UserDefaults.standard.set(panelPosition.rawValue, forKey: Keys.panelPosition) }
+    }
 
     private enum Keys {
         static let hapticStrength = "hapticStrength"
         static let keySound = "keySoundEnabled"
+        static let panelPosition = "panelPosition"
         static let seen = "seenTasks"
         static let fastMode = "fastModeEnabled"
         static let codexUsageMetric = "codexUsageMetric"
@@ -64,6 +68,9 @@ final class CodexStore: ObservableObject {
         self.haptics = haptics
         self.hapticStrength = HapticStrength(rawValue: UserDefaults.standard.string(forKey: Keys.hapticStrength) ?? "standard") ?? .standard
         self.keySoundEnabled = UserDefaults.standard.object(forKey: Keys.keySound) as? Bool ?? true
+        self.panelPosition = PanelPosition(
+            rawValue: UserDefaults.standard.string(forKey: Keys.panelPosition) ?? "top"
+        ) ?? .top
         self.isFastModeEnabled = UserDefaults.standard.bool(forKey: Keys.fastMode)
         self.codexUsageMetric = CodexUsageMetric(
             rawValue: UserDefaults.standard.string(forKey: Keys.codexUsageMetric) ?? ""
