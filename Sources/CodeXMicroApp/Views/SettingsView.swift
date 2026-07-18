@@ -19,6 +19,21 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("悬浮位置") {
+                    Picker("悬浮位置", selection: $store.panelPosition) {
+                        ForEach(PanelPosition.allCases) { position in
+                            Text(position.label).tag(position)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("悬浮位置")
+
+                    Text(store.panelPosition.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("系统权限") {
                     HStack {
                         Label(
