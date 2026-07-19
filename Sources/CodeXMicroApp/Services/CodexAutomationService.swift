@@ -49,40 +49,40 @@ final class CodexAutomationService {
 
     func perform(_ action: MicroAction) async throws {
         if action == .openCodex {
-            try await activateCodex()
+            _ = try await activateCodex()
             return
         }
         try requireAccessibility()
-        try await activateCodex()
+        let codexPID = try await activateCodex()
 
         switch action {
         case .fast:
             // Codex exposes Fast mode through the user keybinding, not as a
             // searchable command-menu ID. Keep this in sync with
             // codex-keybindings.json (Ctrl+Shift+F).
-            sendKey(3, flags: [.maskControl, .maskShift])
+            sendKey(3, flags: [.maskControl, .maskShift], to: codexPID)
         case .approve, .send:
-            sendKey(36)
+            sendKey(36, to: codexPID)
         case .decline:
-            sendKey(53)
+            sendKey(53, to: codexPID)
         case .newTask:
-            sendKey(45, flags: .maskCommand)
+            sendKey(45, flags: .maskCommand, to: codexPID)
         case .plan:
-            sendKey(35, flags: [.maskControl, .maskShift])
+            sendKey(35, flags: [.maskControl, .maskShift], to: codexPID)
         case .goal:
             // Goal mode is exposed as the /goal composer command rather than
             // a bindable Codex command. Leave the objective for the user to enter.
-            sendText("/goal ")
+            sendText("/goal ", to: codexPID)
         case .fork:
-            try await runCommandPalette("forkThread")
+            try await runCommandPalette("forkThread", in: codexPID)
         case .reasoningUp:
             // Ctrl+Shift+I is bound to composer.increaseReasoningEffort in
             // codex-keybindings.json. Internal command IDs are not searchable
             // entries in Codex's command menu.
-            sendKey(34, flags: [.maskControl, .maskShift])
+            sendKey(34, flags: [.maskControl, .maskShift], to: codexPID)
         case .reasoningDown:
             // Ctrl+Shift+U is bound to composer.decreaseReasoningEffort.
-            sendKey(32, flags: [.maskControl, .maskShift])
+            sendKey(32, flags: [.maskControl, .maskShift], to: codexPID)
         case .openCodex:
             break
         }
@@ -177,8 +177,8 @@ final class CodexAutomationService {
 
     func setVoiceDictation(active: Bool) async throws {
         try requireAccessibility()
-        try await activateCodex()
-        sendKey(2, flags: [.maskControl, .maskShift])
+        let codexPID = try await activateCodex()
+        sendKey(2, flags: [.maskControl, .maskShift], to: codexPID)
     }
 
     func performJoystick(_ direction: JoystickDirection) async throws {
@@ -206,7 +206,7 @@ final class CodexAutomationService {
         }
     }
 
-    private func activateCodex() async throws {
+    private func activateCodex() async throws -> pid_t {
         let bundleIDs = ["com.openai.codex", "com.openai.chat", "com.openai.ChatGPT"]
         if let running = NSWorkspace.shared.runningApplications.first(where: { app in
             guard let id = app.bundleIdentifier else { return false }
@@ -214,47 +214,47 @@ final class CodexAutomationService {
         }) {
             running.activate(options: [.activateAllWindows])
             try await Task.sleep(for: .milliseconds(170))
-            return
+            return running.processIdentifier
         }
         for id in bundleIDs {
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { continue }
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true
-            _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            let running = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
             try await Task.sleep(for: .milliseconds(350))
-            return
+            return running.processIdentifier
         }
         throw AutomationError.codexNotInstalled
     }
 
-    private func runCommandPalette(_ command: String) async throws {
-        sendKey(40, flags: .maskCommand)
+    private func runCommandPalette(_ command: String, in codexPID: pid_t) async throws {
+        sendKey(40, flags: .maskCommand, to: codexPID)
         try await Task.sleep(for: .milliseconds(320))
-        sendText(command)
+        sendText(command, to: codexPID)
         try await Task.sleep(for: .milliseconds(220))
-        sendKey(36)
+        sendKey(36, to: codexPID)
     }
 
     private func runShortcut(keyCode: CGKeyCode, flags: CGEventFlags) async throws {
         try requireAccessibility()
-        try await activateCodex()
-        sendKey(keyCode, flags: flags)
+        let codexPID = try await activateCodex()
+        sendKey(keyCode, flags: flags, to: codexPID)
     }
 
     private func runPaletteCommand(_ command: String) async throws {
         try requireAccessibility()
-        try await activateCodex()
-        try await runCommandPalette(command)
+        let codexPID = try await activateCodex()
+        try await runCommandPalette(command, in: codexPID)
     }
 
     private func startNewTask(prompt: String) async throws {
         try requireAccessibility()
-        try await activateCodex()
-        sendKey(45, flags: .maskCommand)
+        let codexPID = try await activateCodex()
+        sendKey(45, flags: .maskCommand, to: codexPID)
         try await Task.sleep(for: .milliseconds(320))
-        sendText(prompt)
+        sendText(prompt, to: codexPID)
         try await Task.sleep(for: .milliseconds(120))
-        sendKey(36)
+        sendKey(36, to: codexPID)
     }
 
     private func openURL(_ value: String) {
@@ -266,7 +266,7 @@ final class CodexAutomationService {
         openURL("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
     }
 
-    private func sendKey(_ keyCode: CGKeyCode, flags: CGEventFlags = []) {
+    private func sendKey(_ keyCode: CGKeyCode, flags: CGEventFlags = [], to pid: pid_t) {
         let source = CGEventSource(stateID: .hidSystemState)
         let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
         let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
@@ -274,11 +274,11 @@ final class CodexAutomationService {
         up?.flags = flags
         down?.setIntegerValueField(.eventSourceUserData, value: ShortcutEventMarker.codexAutomation)
         up?.setIntegerValueField(.eventSourceUserData, value: ShortcutEventMarker.codexAutomation)
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+        down?.postToPid(pid)
+        up?.postToPid(pid)
     }
 
-    private func sendText(_ text: String) {
+    private func sendText(_ text: String, to pid: pid_t) {
         let source = CGEventSource(stateID: .hidSystemState)
         let scalars = Array(text.utf16)
         let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
@@ -287,7 +287,7 @@ final class CodexAutomationService {
             down?.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
             up?.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
         }
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+        down?.postToPid(pid)
+        up?.postToPid(pid)
     }
 }
