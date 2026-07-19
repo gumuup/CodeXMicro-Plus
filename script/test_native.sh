@@ -11,8 +11,10 @@ xcrun swiftc \
   Sources/CodeXMicroApp/Models/WeeklyQuota.swift \
   Sources/CodeXMicroApp/Models/CodexUsageMetric.swift \
   Sources/CodeXMicroApp/Models/MicroAction.swift \
+  Sources/CodeXMicroApp/Models/KeyboardShortcut.swift \
   Sources/CodeXMicroApp/Models/ToolboxAction.swift \
   Sources/CodeXMicroApp/Support/DialStepResolver.swift \
+  Sources/CodeXMicroApp/Support/DialInteractionView.swift \
   Sources/CodeXMicroApp/Support/PanelResizeHandle.swift \
   Sources/CodeXMicroApp/Support/ProcessOutputReader.swift \
   Sources/CodeXMicroApp/Support/CodexRolloutParser.swift \

@@ -23,10 +23,15 @@ final class CodexAutomationService {
 
     func requestAccessibility() {
         guard !isAccessibilityTrusted else { return }
-        guard !didRequestAccessibilityThisLaunch else {
+        if didRequestAccessibilityThisLaunch {
             openAccessibilitySettings()
             return
         }
+        promptForAccessibilityOnce()
+    }
+
+    private func promptForAccessibilityOnce() {
+        guard !isAccessibilityTrusted, !didRequestAccessibilityThisLaunch else { return }
         didRequestAccessibilityThisLaunch = true
         // The exported Core Foundation global is not annotated for Swift 6
         // concurrency; its documented string value is stable.
@@ -193,7 +198,10 @@ final class CodexAutomationService {
 
     private func requireAccessibility() throws {
         guard isAccessibilityTrusted else {
-            requestAccessibility()
+            // An action may be retried many times while the user is deciding
+            // whether to grant access. Only the explicit Settings button should
+            // reopen System Settings after the first system prompt.
+            promptForAccessibilityOnce()
             throw AutomationError.accessibilityRequired
         }
     }
@@ -264,6 +272,8 @@ final class CodexAutomationService {
         let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
         down?.flags = flags
         up?.flags = flags
+        down?.setIntegerValueField(.eventSourceUserData, value: ShortcutEventMarker.codexAutomation)
+        up?.setIntegerValueField(.eventSourceUserData, value: ShortcutEventMarker.codexAutomation)
         down?.post(tap: .cghidEventTap)
         up?.post(tap: .cghidEventTap)
     }

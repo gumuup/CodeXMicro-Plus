@@ -14,6 +14,8 @@ final class CodexStore: ObservableObject {
     @Published var feedbackMessage: String?
     @Published var labelsVisible = true
     @Published var isVoicePressed = false
+    @Published private(set) var shortcutBindings: [ShortcutTarget: KeyboardShortcutBinding]
+    @Published private(set) var shortcutRecordingTarget: ShortcutTarget?
 
     @Published var hapticStrength: HapticStrength {
         didSet { UserDefaults.standard.set(hapticStrength.rawValue, forKey: Keys.hapticStrength) }
@@ -32,6 +34,8 @@ final class CodexStore: ObservableObject {
         static let seen = "seenTasks"
         static let fastMode = "fastModeEnabled"
         static let codexUsageMetric = "codexUsageMetric"
+        static let shortcutBindings = "shortcutBindings.v1"
+        static let shortcutDefaultsVersion = "shortcutDefaultsVersion"
     }
 
     private enum AutomationRequest {
@@ -50,8 +54,10 @@ final class CodexStore: ObservableObject {
     private let stateService: CodexStateService
     let automation: CodexAutomationService
     let haptics: HapticService
+    private let shortcutService: ShortcutService
     private var pollingTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
+    private var shortcutRecordingTimeoutTask: Task<Void, Never>?
     private let automationQueue = SerialAsyncQueue<AutomationRequest>()
     private var isVoiceAutomationActive = false
     private var seen: [String: Int64]
@@ -61,11 +67,13 @@ final class CodexStore: ObservableObject {
     init(
         stateService: CodexStateService = CodexStateService(),
         automation: CodexAutomationService = CodexAutomationService(),
-        haptics: HapticService = HapticService()
+        haptics: HapticService = HapticService(),
+        shortcutService: ShortcutService = ShortcutService()
     ) {
         self.stateService = stateService
         self.automation = automation
         self.haptics = haptics
+        self.shortcutService = shortcutService
         self.hapticStrength = HapticStrength(rawValue: UserDefaults.standard.string(forKey: Keys.hapticStrength) ?? "standard") ?? .standard
         self.keySoundEnabled = UserDefaults.standard.object(forKey: Keys.keySound) as? Bool ?? true
         self.panelPosition = PanelPosition(
@@ -76,15 +84,40 @@ final class CodexStore: ObservableObject {
             rawValue: UserDefaults.standard.string(forKey: Keys.codexUsageMetric) ?? ""
         ) ?? .weeklyRemaining
         self.seen = UserDefaults.standard.dictionary(forKey: Keys.seen) as? [String: Int64] ?? [:]
+        let savedShortcutBindings = UserDefaults.standard.data(forKey: Keys.shortcutBindings).flatMap {
+            try? JSONDecoder().decode([ShortcutTarget: KeyboardShortcutBinding].self, from: $0)
+        }
+        let shouldInstallShortcutDefaults = savedShortcutBindings == nil
+            || UserDefaults.standard.integer(forKey: Keys.shortcutDefaultsVersion) < ShortcutDefaults.currentVersion
+        if shouldInstallShortcutDefaults {
+            let migratedBindings = ShortcutDefaults.merging(into: savedShortcutBindings ?? [:])
+            self.shortcutBindings = migratedBindings
+            if let data = try? JSONEncoder().encode(migratedBindings) {
+                UserDefaults.standard.set(data, forKey: Keys.shortcutBindings)
+                UserDefaults.standard.set(ShortcutDefaults.currentVersion, forKey: Keys.shortcutDefaultsVersion)
+            }
+        } else {
+            self.shortcutBindings = savedShortcutBindings ?? [:]
+        }
+        self.shortcutRecordingTarget = nil
     }
 
     deinit {
         pollingTask?.cancel()
         feedbackTask?.cancel()
+        shortcutRecordingTimeoutTask?.cancel()
     }
 
     func start() {
         guard pollingTask == nil else { return }
+        shortcutService.start(
+            onTrigger: { [weak self] target in self?.triggerShortcut(target) },
+            onCapture: { [weak self] event in self?.handleShortcutCapture(event) }
+        )
+        let registrationFailures = shortcutService.update(bindings: shortcutBindings)
+        if let target = registrationFailures.first, let binding = shortcutBindings[target] {
+            showFeedback("\(binding.displayName) 已被系统或其他应用占用")
+        }
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
@@ -207,8 +240,120 @@ final class CodexStore: ObservableObject {
         automation.requestAccessibility()
     }
 
+    func shortcut(for target: ShortcutTarget) -> KeyboardShortcutBinding? {
+        shortcutBindings[target]
+    }
+
+    func beginShortcutRecording(for target: ShortcutTarget) {
+        shortcutRecordingTimeoutTask?.cancel()
+        shortcutRecordingTarget = target
+        shortcutService.beginRecording(for: target)
+        showFeedback("为 \(target.title) 按下快捷键 · Esc 取消 · Delete 清除")
+        shortcutRecordingTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled, self?.shortcutRecordingTarget == target else { return }
+            self?.cancelShortcutRecording(message: "快捷键设置已超时")
+        }
+    }
+
+    func cancelShortcutRecording() {
+        cancelShortcutRecording(message: "已取消快捷键设置")
+    }
+
+    func clearShortcut(for target: ShortcutTarget) {
+        shortcutBindings.removeValue(forKey: target)
+        if shortcutRecordingTarget == target {
+            shortcutRecordingTarget = nil
+            shortcutService.cancelRecording()
+        }
+        persistShortcuts()
+        showFeedback("已清除 \(target.title) 的快捷键")
+    }
+
     private func tactilePress() {
         haptics.press(strength: hapticStrength, soundEnabled: keySoundEnabled)
+    }
+
+    private func triggerShortcut(_ target: ShortcutTarget) {
+        switch target {
+        case .agent1: openTask(at: 0)
+        case .agent2: openTask(at: 1)
+        case .agent3: openTask(at: 2)
+        case .agent4: openTask(at: 3)
+        case .agent5: openTask(at: 4)
+        case .agent6: openTask(at: 5)
+        case .joystickUp: performJoystick(.up)
+        case .joystickRight: performJoystick(.right)
+        case .joystickDown: performJoystick(.down)
+        case .joystickLeft: performJoystick(.left)
+        case .fast: perform(MicroAction.fast)
+        case .approve: perform(MicroAction.approve)
+        case .decline: perform(MicroAction.decline)
+        case .newTask: perform(MicroAction.newTask)
+        case .toggleLabels: toggleLayer()
+        case .voice:
+            isVoicePressed ? endVoice() : beginVoice()
+        case .codexStatus: activateCodexStatusButton()
+        case .reasoningDown: adjustReasoning(by: -1)
+        case .reasoningUp: adjustReasoning(by: 1)
+        }
+    }
+
+    private func handleShortcutCapture(_ event: ShortcutService.CaptureEvent) {
+        switch event {
+        case let .captured(target, binding):
+            shortcutRecordingTimeoutTask?.cancel()
+            let reassignedTarget = shortcutBindings.first(where: {
+                $0.key != target && $0.value == binding
+            })?.key
+            if let reassignedTarget {
+                shortcutBindings.removeValue(forKey: reassignedTarget)
+            }
+            shortcutBindings[target] = binding
+            shortcutRecordingTarget = nil
+            let registrationFailures = persistShortcuts()
+            if registrationFailures.contains(target) {
+                shortcutBindings.removeValue(forKey: target)
+                _ = persistShortcuts()
+                showFeedback("\(binding.displayName) 已被系统或其他应用占用，请换一个快捷键")
+                return
+            }
+            if let reassignedTarget {
+                showFeedback("\(binding.displayName) 已从 \(reassignedTarget.title) 改绑到 \(target.title)")
+            } else {
+                showFeedback("\(target.title)：\(binding.displayName)")
+            }
+        case let .cleared(target):
+            shortcutRecordingTimeoutTask?.cancel()
+            shortcutBindings.removeValue(forKey: target)
+            shortcutRecordingTarget = nil
+            persistShortcuts()
+            showFeedback("已清除 \(target.title) 的快捷键")
+        case .cancelled:
+            shortcutRecordingTimeoutTask?.cancel()
+            shortcutRecordingTarget = nil
+            if feedbackMessage?.contains("超时") != true {
+                showFeedback("已取消快捷键设置")
+            }
+        case let .invalid(message):
+            showFeedback(message)
+        }
+    }
+
+    private func cancelShortcutRecording(message: String) {
+        guard shortcutRecordingTarget != nil else { return }
+        shortcutRecordingTimeoutTask?.cancel()
+        shortcutRecordingTarget = nil
+        showFeedback(message)
+        shortcutService.cancelRecording()
+    }
+
+    @discardableResult
+    private func persistShortcuts() -> Set<ShortcutTarget> {
+        let failures = shortcutService.update(bindings: shortcutBindings)
+        guard let data = try? JSONEncoder().encode(shortcutBindings) else { return failures }
+        UserDefaults.standard.set(data, forKey: Keys.shortcutBindings)
+        return failures
     }
 
     private func enqueueAutomation(_ request: AutomationRequest) {

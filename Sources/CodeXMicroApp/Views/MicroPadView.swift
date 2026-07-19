@@ -42,15 +42,31 @@ private struct MicroPadSurface: View {
             VStack(spacing: spacing) {
                 HStack(spacing: spacing) {
                     JoystickView(onTrigger: store.performJoystick, onDetent: store.joystickDetent)
+                        .contextMenu { joystickShortcutMenu }
                     AgentKeyView(index: 0, task: store.task(at: 0), labelsVisible: store.labelsVisible) { store.openTask(at: 0) }
+                        .shortcutConfigurable(.agent1, store: store)
                     AgentKeyView(index: 1, task: store.task(at: 1), labelsVisible: store.labelsVisible) { store.openTask(at: 1) }
-                    ReasoningDialView(level: store.reasoningLevel, onAdjust: store.adjustReasoning)
+                        .shortcutConfigurable(.agent2, store: store)
+                    ReasoningDialView(
+                        level: store.reasoningLevel,
+                        onAdjust: store.adjustReasoning,
+                        shortcutName: { step in
+                            store.shortcut(for: reasoningShortcutTarget(for: step))?.displayName
+                        },
+                        onConfigureShortcut: { step in
+                            store.beginShortcutRecording(for: reasoningShortcutTarget(for: step))
+                        },
+                        onClearShortcut: { step in
+                            store.clearShortcut(for: reasoningShortcutTarget(for: step))
+                        }
+                    )
                 }
                 .frame(height: keySize)
 
                 HStack(spacing: spacing) {
                     ForEach(2..<6, id: \.self) { index in
                         AgentKeyView(index: index, task: store.task(at: index), labelsVisible: store.labelsVisible) { store.openTask(at: index) }
+                            .shortcutConfigurable(ShortcutTarget.agent(at: index)!, store: store)
                     }
                 }
                 .frame(height: keySize)
@@ -73,6 +89,7 @@ private struct MicroPadSurface: View {
                         onRelease: store.endVoice
                     )
                     .frame(width: keySize * 2 + spacing, height: keySize)
+                    .shortcutConfigurable(.voice, store: store)
                     Button { store.activateCodexStatusButton() } label: {
                         codexStatusGlyph
                     }
@@ -80,6 +97,7 @@ private struct MicroPadSurface: View {
                         .frame(width: keySize, height: keySize)
                         .help(codexStatusHelp)
                         .accessibilityLabel(codexStatusHelp)
+                        .shortcutConfigurable(.codexStatus, store: store)
                 }
                 .frame(height: keySize)
             }
@@ -99,14 +117,27 @@ private struct MicroPadSurface: View {
     }
 
     private var moveHandles: some View {
-        VStack {
-            PanelDragRegion()
-                .frame(width: scaled(150), height: scaled(22))
-            Spacer()
-            PanelDragRegion()
-                .frame(width: scaled(150), height: scaled(22))
+        let cornerExtent = scaled(34)
+        let edgeLength = designSize - cornerExtent * 2
+
+        return ZStack {
+            VStack(spacing: 0) {
+                PanelDragRegion()
+                    .frame(width: edgeLength, height: cornerExtent)
+                Spacer(minLength: 0)
+                PanelDragRegion()
+                    .frame(width: edgeLength, height: cornerExtent)
+            }
+
+            HStack(spacing: 0) {
+                PanelDragRegion()
+                    .frame(width: cornerExtent, height: edgeLength)
+                Spacer(minLength: 0)
+                PanelDragRegion()
+                    .frame(width: cornerExtent, height: edgeLength)
+            }
         }
-        .padding(.vertical, scaled(2))
+        .frame(width: designSize, height: designSize)
     }
 
     private var resizeHandles: some View {
@@ -194,6 +225,7 @@ private struct MicroPadSurface: View {
                 ? (store.isFastModeEnabled ? "关闭 Fast 模式" : "启用 Fast 模式")
                 : action.accessibilityLabel
         )
+        .shortcutConfigurable(shortcutTarget(for: action), store: store)
     }
 
     private var touchSensor: some View {
@@ -212,6 +244,7 @@ private struct MicroPadSurface: View {
         .buttonStyle(.plain)
         .help(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
         .accessibilityLabel(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
+        .shortcutConfigurable(.toggleLabels, store: store)
     }
 
     @ViewBuilder private var codexStatusGlyph: some View {
@@ -285,7 +318,7 @@ private struct MicroPadSurface: View {
 
     private var sideLabels: some View {
         Group {
-            Text("Work Louder | OpenAI | 2026")
+            Text("Designed  by gumuup \(appVersion)")
                 .rotationEffect(.degrees(-90))
                 .offset(x: -scaled(201))
             Text("You can just build things")
@@ -296,6 +329,10 @@ private struct MicroPadSurface: View {
         }
         .font(.system(size: scaled(8.5), weight: .medium, design: .rounded))
         .foregroundStyle(.black.opacity(0.56))
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.0"
     }
 
     private var screwHeads: some View {
@@ -342,7 +379,26 @@ private struct MicroPadSurface: View {
     }
 
     @ViewBuilder private var feedbackToast: some View {
-        if let message = store.feedbackMessage {
+        if let recordingTarget = store.shortcutRecordingTarget {
+            Button(action: store.cancelShortcutRecording) {
+                HStack(spacing: scaled(5)) {
+                    Text(store.feedbackMessage ?? "为 \(recordingTarget.title) 按下快捷键 · Esc 取消 · Delete 清除")
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: scaled(10), weight: .bold))
+                }
+                .font(.system(size: scaled(10), weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, scaled(12))
+                .padding(.vertical, scaled(7))
+                .background(.indigo.opacity(0.9), in: Capsule())
+                .shadow(radius: scaled(8))
+            }
+            .buttonStyle(.plain)
+            .help("点击取消快捷键设置")
+            .accessibilityLabel("取消 \(recordingTarget.title) 的快捷键设置")
+            .offset(y: -scaled(201))
+            .transition(.move(edge: .top).combined(with: .opacity))
+        } else if let message = store.feedbackMessage {
             Text(message)
                 .font(.system(size: scaled(11), weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
@@ -354,6 +410,56 @@ private struct MicroPadSurface: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .animation(.spring(response: 0.25), value: message)
         }
+    }
+
+    @ViewBuilder private var joystickShortcutMenu: some View {
+        ForEach(joystickShortcutTargets, id: \.self) { target in
+            Button {
+                store.beginShortcutRecording(for: target)
+            } label: {
+                Label(joystickShortcutLabel(for: target), systemImage: "keyboard")
+            }
+        }
+
+        if !configuredJoystickTargets.isEmpty {
+            Divider()
+            ForEach(configuredJoystickTargets, id: \.self) { target in
+                Button(role: .destructive) {
+                    store.clearShortcut(for: target)
+                } label: {
+                    Label("清除 \(target.title)", systemImage: "delete.left")
+                }
+            }
+        }
+    }
+
+    private var joystickShortcutTargets: [ShortcutTarget] {
+        [.joystickUp, .joystickRight, .joystickDown, .joystickLeft]
+    }
+
+    private var configuredJoystickTargets: [ShortcutTarget] {
+        joystickShortcutTargets.filter { store.shortcut(for: $0) != nil }
+    }
+
+    private func joystickShortcutLabel(for target: ShortcutTarget) -> String {
+        guard let shortcut = store.shortcut(for: target) else {
+            return "设置 \(target.title)…"
+        }
+        return "设置 \(target.title)…（当前 \(shortcut.displayName)）"
+    }
+
+    private func shortcutTarget(for action: MicroAction) -> ShortcutTarget {
+        switch action {
+        case .fast: .fast
+        case .approve: .approve
+        case .decline: .decline
+        case .newTask: .newTask
+        default: preconditionFailure("这个面板按键没有可配置的快捷键目标")
+        }
+    }
+
+    private func reasoningShortcutTarget(for step: Int) -> ShortcutTarget {
+        step < 0 ? .reasoningDown : .reasoningUp
     }
 
     private var screwOffsets: [CGSize] {

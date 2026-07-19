@@ -73,6 +73,64 @@ precondition(DialStepResolver.dragSteps(from: 0, to: 2) == [1, 1])
 precondition(DialStepResolver.dragSteps(from: 1, to: -2) == [-1, -1, -1])
 precondition(ReasoningLevel.allCases.map(\.label) == ["轻度", "中", "高", "极高"])
 precondition(ReasoningLevel.allCases.map(\.dialAngleDegrees) == [-90, 0, 90, 180])
+let dialEventView = DialEventView()
+dialEventView.shortcutName = { $0 < 0 ? "⌃L" : nil }
+var configuredReasoningStep: Int?
+var clearedReasoningStep: Int?
+dialEventView.onConfigureShortcut = { configuredReasoningStep = $0 }
+dialEventView.onClearShortcut = { clearedReasoningStep = $0 }
+let reasoningDownMenu = dialEventView.shortcutMenu(for: -1)
+precondition(reasoningDownMenu.items.map(\.title) == ["设置降低推理强度快捷键…", "", "当前：⌃L", "清除降低推理强度快捷键"])
+let configureDownItem = reasoningDownMenu.item(at: 0)!
+let clearDownItem = reasoningDownMenu.item(at: 3)!
+precondition(NSApplication.shared.sendAction(configureDownItem.action!, to: configureDownItem.target, from: configureDownItem))
+precondition(NSApplication.shared.sendAction(clearDownItem.action!, to: clearDownItem.target, from: clearDownItem))
+precondition(configuredReasoningStep == -1)
+precondition(clearedReasoningStep == -1)
+let reasoningUpMenu = dialEventView.shortcutMenu(for: 1)
+precondition(reasoningUpMenu.items.map(\.title) == ["设置提高推理强度快捷键…"])
+let configureUpItem = reasoningUpMenu.item(at: 0)!
+precondition(NSApplication.shared.sendAction(configureUpItem.action!, to: configureUpItem.target, from: configureUpItem))
+precondition(configuredReasoningStep == 1)
+
+let fastShortcut = KeyboardShortcutBinding(
+    keyCode: 3,
+    modifiers: [.control, .shift],
+    keyLabel: "F"
+)
+precondition(fastShortcut.displayName == "⌃⇧F")
+let shortcutPayload: [ShortcutTarget: KeyboardShortcutBinding] = [.fast: fastShortcut]
+let shortcutData = try JSONEncoder().encode(shortcutPayload)
+let decodedShortcutPayload = try JSONDecoder().decode(
+    [ShortcutTarget: KeyboardShortcutBinding].self,
+    from: shortcutData
+)
+precondition(decodedShortcutPayload == shortcutPayload)
+precondition(ShortcutTarget.agent(at: 0) == .agent1)
+precondition(ShortcutTarget.agent(at: 5) == .agent6)
+precondition(ShortcutTarget.agent(at: 6) == nil)
+precondition(ShortcutTarget.allCases.count == 19)
+precondition(ShortcutDefaults.bindings.count == ShortcutTarget.allCases.count)
+precondition(Set(ShortcutDefaults.bindings.values).count == ShortcutDefaults.bindings.count)
+precondition(ShortcutDefaults.bindings[.fast]?.displayName == "⌃F")
+precondition(ShortcutDefaults.bindings[.approve]?.displayName == "⌃[")
+precondition(ShortcutDefaults.bindings[.decline]?.displayName == "⌃]")
+precondition(ShortcutDefaults.bindings[.reasoningDown]?.displayName == "⌃-")
+precondition(ShortcutDefaults.bindings[.reasoningUp]?.displayName == "⌃=")
+precondition(ShortcutDefaults.bindings[.newTask]?.displayName == "⌃N")
+precondition(ShortcutDefaults.bindings[.voice]?.displayName == "⌃⇧D")
+precondition(ShortcutDefaults.bindings[.toggleLabels]?.displayName == "⌃H")
+precondition(ShortcutDefaults.bindings[.codexStatus]?.displayName == "⌃C")
+precondition(ShortcutDefaults.bindings[.joystickUp]?.displayName == "⌃W")
+precondition(ShortcutDefaults.bindings[.joystickDown]?.displayName == "⌃S")
+precondition(ShortcutDefaults.bindings[.joystickLeft]?.displayName == "⌃A")
+precondition(ShortcutDefaults.bindings[.joystickRight]?.displayName == "⌃D")
+precondition((1...6).map { ShortcutDefaults.bindings[ShortcutTarget.agent(at: $0 - 1)!]?.displayName } == (1...6).map { "⌃\($0)" })
+
+let customFastShortcut = KeyboardShortcutBinding(keyCode: 3, modifiers: [.command], keyLabel: "F")
+let migratedShortcutBindings = ShortcutDefaults.merging(into: [.fast: customFastShortcut])
+precondition(migratedShortcutBindings[.fast] == customFastShortcut)
+precondition(migratedShortcutBindings[.agent1] == ShortcutDefaults.bindings[.agent1])
 
 let initialPanelFrame = NSRect(x: 100, y: 200, width: 438, height: 438)
 let enlargedTopLeftFrame = PanelResizeCorner.topLeft.frame(size: 500, anchoredTo: initialPanelFrame)
@@ -99,4 +157,4 @@ let prSearchResults = ToolboxAction.allCases.filter { $0.searchText.contains("pr
 precondition(prSearchResults.contains("创建 PR"))
 precondition(prSearchResults.contains("审查 PR"))
 
-print("Codex rollout parser, process output, dial interaction, panel resize, and toolbox catalog: PASS")
+print("Codex rollout parser, shortcuts, process output, dial interaction, panel resize, and toolbox catalog: PASS")
