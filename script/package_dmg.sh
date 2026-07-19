@@ -5,7 +5,7 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 DISPLAY_NAME="CodeXMicro++"
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="${CODEX_MICRO_VERSION:-2.0.0}"
+VERSION="${CODEX_MICRO_VERSION:-2.0.1}"
 MIN_SYSTEM_VERSION="14.0"
 LOCAL_SIGNING_NAME="CodexMicro Local Development"
 LOCAL_SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -60,7 +60,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>CodeXMicro++</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>200</string>
+  <key>CFBundleVersion</key><string>201</string>
   <key>CFBundleIconFile</key><string>AppIcon.png</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key><true/>
