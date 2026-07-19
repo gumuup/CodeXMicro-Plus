@@ -3,7 +3,9 @@ import Combine
 import SwiftUI
 
 final class FloatingPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var allowsKeyFocus = false
+
+    override var canBecomeKey: Bool { allowsKeyFocus }
     override var canBecomeMain: Bool { false }
 }
 
@@ -37,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = CodexStore()
     private var panel: FloatingPanel?
     private var panelPositionCancellable: AnyCancellable?
+    private var shortcutRecordingCancellable: AnyCancellable?
+    private var applicationActiveBeforeRecording: NSRunningApplication?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -45,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .sink { [weak self] position in
                 self?.applyPanelPosition(position)
+            }
+        shortcutRecordingCancellable = store.$shortcutRecordingTarget
+            .map { $0 != nil }
+            .removeDuplicates()
+            .sink { [weak self] isRecording in
+                self?.setShortcutRecordingFocus(isRecording)
             }
         store.start()
     }
@@ -103,6 +113,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configurePanelLevel(panel, for: position)
         if wasVisible {
             panel.orderFrontRegardless()
+        }
+    }
+
+    private func setShortcutRecordingFocus(_ isRecording: Bool) {
+        guard let panel else { return }
+        if isRecording {
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            applicationActiveBeforeRecording = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+                ? nil
+                : frontmost
+            panel.allowsKeyFocus = true
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        panel.allowsKeyFocus = false
+        panel.resignKey()
+        panel.orderFrontRegardless()
+        let previousApplication = applicationActiveBeforeRecording
+        applicationActiveBeforeRecording = nil
+        Task { @MainActor in
+            await Task.yield()
+            if let previousApplication, !previousApplication.isTerminated {
+                previousApplication.activate(options: [.activateAllWindows])
+            } else {
+                NSApp.deactivate()
+            }
         }
     }
 

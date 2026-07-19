@@ -3,6 +3,9 @@ import SwiftUI
 struct ReasoningDialView: View {
     let level: ReasoningLevel
     let onAdjust: (Int) -> Void
+    let shortcutName: (Int) -> String?
+    let onConfigureShortcut: (Int) -> Void
+    let onClearShortcut: (Int) -> Void
     @Environment(\.microLayoutScale) private var layoutScale
 
     var body: some View {
@@ -38,13 +41,16 @@ struct ReasoningDialView: View {
                 .foregroundStyle(.white.opacity(0.88))
                 .offset(y: scaled(8))
 
-            DialInteractionView { step in
-                onAdjust(step)
-            }
+            DialInteractionView(
+                onStep: onAdjust,
+                shortcutName: shortcutName,
+                onConfigureShortcut: onConfigureShortcut,
+                onClearShortcut: onClearShortcut
+            )
             .background(Color.clear)
         }
         .contentShape(RoundedRectangle(cornerRadius: scaled(17)))
-        .help("点击左侧减小、右侧增加；也可双指滚动或上下拖动")
+        .help("点击左侧减小、右侧增加；右键对应半区设置快捷键；也可双指滚动或上下拖动")
         .accessibilityLabel("推理强度旋钮，当前\(level.label)")
     }
 

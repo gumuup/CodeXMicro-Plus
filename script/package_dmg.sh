@@ -5,8 +5,11 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 DISPLAY_NAME="CodeXMicro++"
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="${CODEX_MICRO_VERSION:-1.1.3}"
+VERSION="${CODEX_MICRO_VERSION:-2.0.0}"
 MIN_SYSTEM_VERSION="14.0"
+LOCAL_SIGNING_NAME="CodexMicro Local Development"
+LOCAL_SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
+LOCAL_SIGNING_KEYCHAIN="$LOCAL_SIGNING_DIR/CodexMicroSigning-v1.keychain-db"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -57,7 +60,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>CodeXMicro++</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>3</string>
+  <key>CFBundleVersion</key><string>200</string>
   <key>CFBundleIconFile</key><string>AppIcon.png</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key><true/>
@@ -73,8 +76,22 @@ if [[ -n "${CODEX_MICRO_DEVELOPER_ID:-}" ]]; then
     --sign "$CODEX_MICRO_DEVELOPER_ID" "$APP_BUNDLE"
   SIGNING_DESCRIPTION="$CODEX_MICRO_DEVELOPER_ID"
 else
-  /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
-  SIGNING_DESCRIPTION="ad-hoc（未公证）"
+  # Accessibility permission is bound to the app's code requirement. An
+  # ad-hoc signature reduces that requirement to the binary's CDHash, which
+  # changes on every build and makes macOS ask for permission again. Reuse the
+  # same project-local development identity as build_and_run.sh instead.
+  "$ROOT_DIR/script/ensure_local_signing_identity.sh"
+  LOCAL_SIGNING_IDENTITY="$({ /usr/bin/security find-identity -p codesigning -v "$LOCAL_SIGNING_KEYCHAIN" || true; } | /usr/bin/awk -v name="$LOCAL_SIGNING_NAME" 'index($0, "\"" name "\"") { print $2; exit }')"
+  if [[ -z "$LOCAL_SIGNING_IDENTITY" ]]; then
+    echo "Unable to resolve signing identity: $LOCAL_SIGNING_NAME" >&2
+    exit 1
+  fi
+  /usr/bin/codesign --force --deep \
+    --sign "$LOCAL_SIGNING_IDENTITY" \
+    --keychain "$LOCAL_SIGNING_KEYCHAIN" \
+    --identifier "$BUNDLE_ID" \
+    "$APP_BUNDLE"
+  SIGNING_DESCRIPTION="${LOCAL_SIGNING_NAME}（本地固定签名，未公证）"
 fi
 /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 
