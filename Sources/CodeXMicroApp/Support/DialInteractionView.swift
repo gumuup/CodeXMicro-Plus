@@ -70,7 +70,7 @@ final class DialEventView: NSView {
         menu.autoenablesItems = false
 
         let configureItem = NSMenuItem(
-            title: "设置\(actionTitle)快捷键…",
+            title: "设置\(actionTitle)按键映射…",
             action: #selector(configureShortcut(_:)),
             keyEquivalent: ""
         )
@@ -87,7 +87,7 @@ final class DialEventView: NSView {
             menu.addItem(currentItem)
 
             let clearItem = NSMenuItem(
-                title: "清除\(actionTitle)快捷键",
+                title: "清除\(actionTitle)按键映射",
                 action: #selector(clearShortcut(_:)),
                 keyEquivalent: ""
             )

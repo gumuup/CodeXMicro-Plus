@@ -16,6 +16,8 @@ final class CodexStore: ObservableObject {
     @Published var isVoicePressed = false
     @Published private(set) var shortcutBindings: [ShortcutTarget: KeyboardShortcutBinding]
     @Published private(set) var shortcutRecordingTarget: ShortcutTarget?
+    @Published private(set) var isDirectKeyMonitoringActive = false
+    @Published private(set) var shortcutRegistrationFailures: [ShortcutTarget: ShortcutService.RegistrationFailure] = [:]
 
     @Published var hapticStrength: HapticStrength {
         didSet { UserDefaults.standard.set(hapticStrength.rawValue, forKey: Keys.hapticStrength) }
@@ -51,6 +53,11 @@ final class CodexStore: ObservableObject {
         }
     }
 
+    private enum VoiceInputSource: Hashable {
+        case panel
+        case shortcut
+    }
+
     private let stateService: CodexStateService
     let automation: CodexAutomationService
     let haptics: HapticService
@@ -60,20 +67,22 @@ final class CodexStore: ObservableObject {
     private var shortcutRecordingTimeoutTask: Task<Void, Never>?
     private let automationQueue = SerialAsyncQueue<AutomationRequest>()
     private var isVoiceAutomationActive = false
+    private var activeVoiceInputs: Set<VoiceInputSource> = []
     private var seen: [String: Int64]
     private var pendingReasoningLevel: ReasoningLevel?
     private var pendingReasoningDeadline = Date.distantPast
+    private var lastKnownAccessibilityTrust = false
 
     init(
         stateService: CodexStateService = CodexStateService(),
-        automation: CodexAutomationService = CodexAutomationService(),
-        haptics: HapticService = HapticService(),
-        shortcutService: ShortcutService = ShortcutService()
+        automation: CodexAutomationService? = nil,
+        haptics: HapticService? = nil,
+        shortcutService: ShortcutService? = nil
     ) {
         self.stateService = stateService
-        self.automation = automation
-        self.haptics = haptics
-        self.shortcutService = shortcutService
+        self.automation = automation ?? CodexAutomationService()
+        self.haptics = haptics ?? HapticService()
+        self.shortcutService = shortcutService ?? ShortcutService()
         self.hapticStrength = HapticStrength(rawValue: UserDefaults.standard.string(forKey: Keys.hapticStrength) ?? "standard") ?? .standard
         self.keySoundEnabled = UserDefaults.standard.object(forKey: Keys.keySound) as? Bool ?? true
         self.panelPosition = PanelPosition(
@@ -100,6 +109,7 @@ final class CodexStore: ObservableObject {
             self.shortcutBindings = savedShortcutBindings ?? [:]
         }
         self.shortcutRecordingTarget = nil
+        self.lastKnownAccessibilityTrust = self.automation.isAccessibilityTrusted
     }
 
     deinit {
@@ -112,11 +122,13 @@ final class CodexStore: ObservableObject {
         guard pollingTask == nil else { return }
         shortcutService.start(
             onTrigger: { [weak self] target in self?.triggerShortcut(target) },
+            onRelease: { [weak self] target in self?.releaseShortcut(target) },
             onCapture: { [weak self] event in self?.handleShortcutCapture(event) }
         )
-        let registrationFailures = shortcutService.update(bindings: shortcutBindings)
-        if let target = registrationFailures.first, let binding = shortcutBindings[target] {
-            showFeedback("\(binding.displayName) 已被系统或其他应用占用")
+        let registrationFailures = updateShortcutRegistrations()
+        if let target = ShortcutTarget.allCases.first(where: { registrationFailures[$0] != nil }),
+           let binding = shortcutBindings[target], let failure = registrationFailures[target] {
+            showFeedback(registrationFailureMessage(failure, binding: binding))
         }
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -127,6 +139,7 @@ final class CodexStore: ObservableObject {
     }
 
     func refresh() async {
+        refreshDirectKeyMonitoringForPermissionChange()
         isCodexRunning = NSWorkspace.shared.runningApplications.contains { application in
             guard let identifier = application.bundleIdentifier else { return false }
             return ["com.openai.codex", "com.openai.chat", "com.openai.ChatGPT"].contains(identifier)
@@ -172,14 +185,24 @@ final class CodexStore: ObservableObject {
     }
 
     func beginVoice() {
-        guard !isVoicePressed else { return }
+        beginVoice(from: .panel)
+    }
+
+    func endVoice() {
+        endVoice(from: .panel)
+    }
+
+    private func beginVoice(from source: VoiceInputSource) {
+        guard activeVoiceInputs.insert(source).inserted else { return }
+        guard activeVoiceInputs.count == 1 else { return }
         isVoicePressed = true
         tactilePress()
         enqueueAutomation(.voice(active: true))
     }
 
-    func endVoice() {
-        guard isVoicePressed else { return }
+    private func endVoice(from source: VoiceInputSource) {
+        guard activeVoiceInputs.remove(source) != nil else { return }
+        guard activeVoiceInputs.isEmpty else { return }
         isVoicePressed = false
         haptics.press(strength: hapticStrength, soundEnabled: false)
         enqueueAutomation(.voice(active: false))
@@ -240,24 +263,54 @@ final class CodexStore: ObservableObject {
         automation.requestAccessibility()
     }
 
+    func retryShortcutMonitoring() {
+        let failures = updateShortcutRegistrations()
+        if let target = ShortcutTarget.allCases.first(where: { failures[$0] != nil }),
+           let failure = failures[target], let binding = shortcutBindings[target] {
+            showFeedback(registrationFailureMessage(failure, binding: binding))
+        }
+    }
+
     func shortcut(for target: ShortcutTarget) -> KeyboardShortcutBinding? {
         shortcutBindings[target]
+    }
+
+    var hasDirectKeyBindings: Bool {
+        shortcutBindings.values.contains { $0.activationMode == .directKey }
+    }
+
+    func shortcutRegistrationIssue(for target: ShortcutTarget) -> String? {
+        guard let failure = shortcutRegistrationFailures[target], let binding = shortcutBindings[target] else {
+            return nil
+        }
+        return switch failure {
+        case .duplicateBinding:
+            "与另一个功能重复"
+        case .hotKeyConflict:
+            "\(binding.displayName) 已被独占，当前未生效"
+        case .shadowedByPhysicalMapping:
+            "被一级物理按键映射覆盖"
+        case .accessibilityRequired:
+            "等待辅助功能授权后接管该按键"
+        case .directMonitorUnavailable:
+            "物理按键映射启动失败"
+        }
     }
 
     func beginShortcutRecording(for target: ShortcutTarget) {
         shortcutRecordingTimeoutTask?.cancel()
         shortcutRecordingTarget = target
         shortcutService.beginRecording(for: target)
-        showFeedback("为 \(target.title) 按下快捷键 · Esc 取消 · Delete 清除")
+        showFeedback("为 \(target.title) 轻点任意单键，或按下组合键 · 修饰键请单独轻点")
         shortcutRecordingTimeoutTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(30))
             guard !Task.isCancelled, self?.shortcutRecordingTarget == target else { return }
-            self?.cancelShortcutRecording(message: "快捷键设置已超时")
+            self?.cancelShortcutRecording(message: "按键映射设置已超时")
         }
     }
 
     func cancelShortcutRecording() {
-        cancelShortcutRecording(message: "已取消快捷键设置")
+        cancelShortcutRecording(message: "已取消按键映射设置")
     }
 
     func clearShortcut(for target: ShortcutTarget) {
@@ -267,7 +320,7 @@ final class CodexStore: ObservableObject {
             shortcutService.cancelRecording()
         }
         persistShortcuts()
-        showFeedback("已清除 \(target.title) 的快捷键")
+        showFeedback("已清除 \(target.title) 的按键映射")
     }
 
     private func tactilePress() {
@@ -292,51 +345,60 @@ final class CodexStore: ObservableObject {
         case .newTask: perform(MicroAction.newTask)
         case .toggleLabels: toggleLayer()
         case .voice:
-            isVoicePressed ? endVoice() : beginVoice()
+            beginVoice(from: .shortcut)
         case .codexStatus: activateCodexStatusButton()
         case .reasoningDown: adjustReasoning(by: -1)
         case .reasoningUp: adjustReasoning(by: 1)
         }
     }
 
+    private func releaseShortcut(_ target: ShortcutTarget) {
+        guard target == .voice else { return }
+        endVoice(from: .shortcut)
+    }
+
     private func handleShortcutCapture(_ event: ShortcutService.CaptureEvent) {
         switch event {
         case let .captured(target, binding):
             shortcutRecordingTimeoutTask?.cancel()
+            let previousBindings = shortcutBindings
             let reassignedTarget = shortcutBindings.first(where: {
-                $0.key != target && $0.value == binding
+                $0.key != target && $0.value.gesture == binding.gesture
             })?.key
             if let reassignedTarget {
                 shortcutBindings.removeValue(forKey: reassignedTarget)
             }
             shortcutBindings[target] = binding
             shortcutRecordingTarget = nil
-            let registrationFailures = persistShortcuts()
-            if registrationFailures.contains(target) {
-                shortcutBindings.removeValue(forKey: target)
-                _ = persistShortcuts()
-                showFeedback("\(binding.displayName) 已被系统或其他应用占用，请换一个快捷键")
+            let registrationFailures = updateShortcutRegistrations()
+            if let failure = registrationFailures[target], failure.preventsSaving {
+                shortcutBindings = previousBindings
+                _ = updateShortcutRegistrations()
+                showFeedback(registrationFailureMessage(failure, binding: binding))
                 return
             }
-            if let reassignedTarget {
-                showFeedback("\(binding.displayName) 已从 \(reassignedTarget.title) 改绑到 \(target.title)")
-            } else {
-                showFeedback("\(target.title)：\(binding.displayName)")
+            saveShortcutBindings()
+            if let failure = registrationFailures[target] {
+                showFeedback(registrationFailureMessage(failure, binding: binding))
+                if failure == .accessibilityRequired { automation.requestAccessibility() }
+                return
             }
-        case let .cleared(target):
-            shortcutRecordingTimeoutTask?.cancel()
-            shortcutBindings.removeValue(forKey: target)
-            shortcutRecordingTarget = nil
-            persistShortcuts()
-            showFeedback("已清除 \(target.title) 的快捷键")
+            let shadowedCount = registrationFailures.values.filter {
+                $0 == .shadowedByPhysicalMapping
+            }.count
+            let shadowedSuffix = shadowedCount > 0 ? " · 已覆盖 \(shadowedCount) 个组合" : ""
+            if let reassignedTarget {
+                showFeedback("\(binding.displayName) 已从 \(reassignedTarget.title) 改绑到 \(target.title) · \(binding.activationMode.label)\(shadowedSuffix)")
+            } else {
+                showFeedback("\(target.title)：\(binding.displayName) · \(binding.activationMode.label)\(shadowedSuffix)")
+            }
         case .cancelled:
             shortcutRecordingTimeoutTask?.cancel()
             shortcutRecordingTarget = nil
+            _ = updateShortcutRegistrations()
             if feedbackMessage?.contains("超时") != true {
-                showFeedback("已取消快捷键设置")
+                showFeedback("已取消按键映射设置")
             }
-        case let .invalid(message):
-            showFeedback(message)
         }
     }
 
@@ -349,11 +411,51 @@ final class CodexStore: ObservableObject {
     }
 
     @discardableResult
-    private func persistShortcuts() -> Set<ShortcutTarget> {
-        let failures = shortcutService.update(bindings: shortcutBindings)
-        guard let data = try? JSONEncoder().encode(shortcutBindings) else { return failures }
-        UserDefaults.standard.set(data, forKey: Keys.shortcutBindings)
+    private func persistShortcuts() -> [ShortcutTarget: ShortcutService.RegistrationFailure] {
+        let failures = updateShortcutRegistrations()
+        saveShortcutBindings()
         return failures
+    }
+
+    private func saveShortcutBindings() {
+        guard let data = try? JSONEncoder().encode(shortcutBindings) else { return }
+        UserDefaults.standard.set(data, forKey: Keys.shortcutBindings)
+    }
+
+    private func updateShortcutRegistrations() -> [ShortcutTarget: ShortcutService.RegistrationFailure] {
+        let failures = shortcutService.update(bindings: shortcutBindings)
+        shortcutRegistrationFailures = failures
+        isDirectKeyMonitoringActive = shortcutService.isDirectKeyMonitoringActive
+        lastKnownAccessibilityTrust = automation.isAccessibilityTrusted
+        return failures
+    }
+
+    private func refreshDirectKeyMonitoringForPermissionChange() {
+        let isTrusted = automation.isAccessibilityTrusted
+        guard isTrusted != lastKnownAccessibilityTrust else {
+            isDirectKeyMonitoringActive = shortcutService.isDirectKeyMonitoringActive
+            return
+        }
+        lastKnownAccessibilityTrust = isTrusted
+        _ = updateShortcutRegistrations()
+    }
+
+    private func registrationFailureMessage(
+        _ failure: ShortcutService.RegistrationFailure,
+        binding: KeyboardShortcutBinding
+    ) -> String {
+        switch failure {
+        case .duplicateBinding:
+            "\(binding.displayName) 已绑定到其他功能，请先改绑或清除"
+        case .hotKeyConflict:
+            "\(binding.displayName) 与系统或其他快捷键冲突，已保留原设置"
+        case .shadowedByPhysicalMapping:
+            "\(binding.displayName) 被一级物理按键映射接管，已保留原设置"
+        case .accessibilityRequired:
+            "\(binding.displayName) 已保存；开启辅助功能权限后即可接管该按键"
+        case .directMonitorUnavailable:
+            "\(binding.displayName) 已保存，但按键映射启动失败；请重新开启辅助功能权限"
+        }
     }
 
     private func enqueueAutomation(_ request: AutomationRequest) {
@@ -419,6 +521,7 @@ final class CodexStore: ObservableObject {
             }
         } catch {
             if case .voice(active: true) = request {
+                activeVoiceInputs.removeAll()
                 isVoicePressed = false
             }
             if request.isReasoningAdjustment {

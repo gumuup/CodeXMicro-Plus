@@ -287,6 +287,8 @@ final class CodexAutomationService {
             down?.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
             up?.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
         }
+        down?.setIntegerValueField(.eventSourceUserData, value: ShortcutEventMarker.codexAutomation)
+        up?.setIntegerValueField(.eventSourceUserData, value: ShortcutEventMarker.codexAutomation)
         down?.postToPid(pid)
         up?.postToPid(pid)
     }

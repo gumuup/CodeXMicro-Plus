@@ -5,7 +5,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 DISPLAY_NAME="CodeXMicro++"
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="${CODEX_MICRO_VERSION:-2.0.1}"
+VERSION="${CODEX_MICRO_VERSION:-2.5.0}"
+BUILD_NUMBER="250"
 MIN_SYSTEM_VERSION="14.0"
 LOCAL_SIGNING_NAME="CodexMicro Local Development"
 LOCAL_SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -28,12 +29,46 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$STAGING_DIR" "$DIST_DIR"
 build_arch() {
   local arch="$1"
   local scratch="$BUILD_DIR/$arch"
-  swift build \
-    --package-path "$ROOT_DIR" \
-    --configuration release \
-    --arch "$arch" \
-    --scratch-path "$scratch" >&2
-  find "$scratch" -type f -path "*/release/$BUILD_PRODUCT" -perm -111 -print -quit
+  if swift build \
+      --package-path "$ROOT_DIR" \
+      --configuration release \
+      --arch "$arch" \
+      --scratch-path "$scratch" >&2; then
+    find "$scratch" -type f -path "*/release/$BUILD_PRODUCT" -perm -111 -print -quit
+    return
+  fi
+
+  local direct_swiftc="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+  local direct_sdk="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+  local direct_output="$scratch/direct-release/$BUILD_PRODUCT"
+  local direct_module_cache="$scratch/direct-release/module-cache"
+  local direct_target="${arch}-apple-macosx$MIN_SYSTEM_VERSION"
+  local swift_sources=()
+
+  if [[ ! -x "$direct_swiftc" || ! -d "$direct_sdk" ]]; then
+    echo "swift build failed and the direct Xcode toolchain is unavailable" >&2
+    return 1
+  fi
+
+  echo "swift build unavailable for $arch; falling back to the Xcode Swift toolchain" >&2
+  mkdir -p "$(dirname "$direct_output")" "$direct_module_cache"
+  while IFS= read -r source; do
+    swift_sources+=("$source")
+  done < <(/usr/bin/find "$ROOT_DIR/Sources/CodeXMicroApp" -name '*.swift' -type f -print | /usr/bin/sort)
+
+  "$direct_swiftc" \
+    -swift-version 6 \
+    -strict-concurrency=complete \
+    -warnings-as-errors \
+    -parse-as-library \
+    -O \
+    -whole-module-optimization \
+    -sdk "$direct_sdk" \
+    -target "$direct_target" \
+    -module-cache-path "$direct_module_cache" \
+    "${swift_sources[@]}" \
+    -o "$direct_output" >&2
+  echo "$direct_output"
 }
 
 ARM_BINARY="$(build_arch arm64)"
@@ -43,7 +78,11 @@ if [[ -z "$ARM_BINARY" || -z "$INTEL_BINARY" ]]; then
   exit 1
 fi
 
-/usr/bin/lipo -create "$ARM_BINARY" "$INTEL_BINARY" -output "$MACOS_DIR/$APP_NAME"
+LIPO_TOOL="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo"
+if [[ ! -x "$LIPO_TOOL" ]]; then
+  LIPO_TOOL="/usr/bin/lipo"
+fi
+"$LIPO_TOOL" -create "$ARM_BINARY" "$INTEL_BINARY" -output "$MACOS_DIR/$APP_NAME"
 chmod +x "$MACOS_DIR/$APP_NAME"
 
 cp "$ROOT_DIR/Sources/CodeXMicroApp/Resources/CodeXMicroHardware.png" "$RESOURCES_DIR/AppIcon.png"
@@ -60,7 +99,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>CodeXMicro++</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>201</string>
+  <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
   <key>CFBundleIconFile</key><string>AppIcon.png</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key><true/>

@@ -42,15 +42,20 @@ struct SettingsView: View {
                         )
                         .foregroundStyle(store.automation.isAccessibilityTrusted ? .green : .orange)
                         Spacer()
-                        Button("打开授权提示") { store.requestAccessibility() }
+                        if !store.automation.isAccessibilityTrusted {
+                            Button("开启辅助功能权限") { store.requestAccessibility() }
+                        }
                     }
-                    Text("权限只用于向本机 Codex 桌面端发送你主动点击的快捷键，不上传任务或按键数据。")
+                    Text("权限用于接管你主动映射的物理按键，并向本机 Codex 发送操作；不保存或上传其他按键数据。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
             .tabItem { Label("通用", systemImage: "slider.horizontal.3") }
+
+            ShortcutSettingsView(store: store)
+                .tabItem { Label("自定义按键", systemImage: "keyboard") }
 
             VStack(alignment: .leading, spacing: 12) {
                 Label("CodeXMicro++", systemImage: "keyboard")
@@ -63,6 +68,6 @@ struct SettingsView: View {
             .padding(24)
             .tabItem { Label("关于", systemImage: "info.circle") }
         }
-        .frame(width: 520, height: 340)
+        .frame(width: 580, height: 520)
     }
 }

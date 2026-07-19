@@ -80,7 +80,7 @@ var clearedReasoningStep: Int?
 dialEventView.onConfigureShortcut = { configuredReasoningStep = $0 }
 dialEventView.onClearShortcut = { clearedReasoningStep = $0 }
 let reasoningDownMenu = dialEventView.shortcutMenu(for: -1)
-precondition(reasoningDownMenu.items.map(\.title) == ["设置降低推理强度快捷键…", "", "当前：⌃L", "清除降低推理强度快捷键"])
+precondition(reasoningDownMenu.items.map(\.title) == ["设置降低推理强度按键映射…", "", "当前：⌃L", "清除降低推理强度按键映射"])
 let configureDownItem = reasoningDownMenu.item(at: 0)!
 let clearDownItem = reasoningDownMenu.item(at: 3)!
 precondition(NSApplication.shared.sendAction(configureDownItem.action!, to: configureDownItem.target, from: configureDownItem))
@@ -88,7 +88,7 @@ precondition(NSApplication.shared.sendAction(clearDownItem.action!, to: clearDow
 precondition(configuredReasoningStep == -1)
 precondition(clearedReasoningStep == -1)
 let reasoningUpMenu = dialEventView.shortcutMenu(for: 1)
-precondition(reasoningUpMenu.items.map(\.title) == ["设置提高推理强度快捷键…"])
+precondition(reasoningUpMenu.items.map(\.title) == ["设置提高推理强度按键映射…"])
 let configureUpItem = reasoningUpMenu.item(at: 0)!
 precondition(NSApplication.shared.sendAction(configureUpItem.action!, to: configureUpItem.target, from: configureUpItem))
 precondition(configuredReasoningStep == 1)
@@ -99,6 +99,7 @@ let fastShortcut = KeyboardShortcutBinding(
     keyLabel: "F"
 )
 precondition(fastShortcut.displayName == "⌃⇧F")
+precondition(fastShortcut.activationMode == .registeredHotKey)
 let shortcutPayload: [ShortcutTarget: KeyboardShortcutBinding] = [.fast: fastShortcut]
 let shortcutData = try JSONEncoder().encode(shortcutPayload)
 let decodedShortcutPayload = try JSONDecoder().decode(
@@ -106,6 +107,12 @@ let decodedShortcutPayload = try JSONDecoder().decode(
     from: shortcutData
 )
 precondition(decodedShortcutPayload == shortcutPayload)
+let legacyShortcutData = Data(#"["fast",{"keyCode":3,"keyLabel":"F","modifiers":10}]"#.utf8)
+let legacyShortcutPayload = try JSONDecoder().decode(
+    [ShortcutTarget: KeyboardShortcutBinding].self,
+    from: legacyShortcutData
+)
+precondition(legacyShortcutPayload[.fast] == fastShortcut)
 precondition(ShortcutTarget.agent(at: 0) == .agent1)
 precondition(ShortcutTarget.agent(at: 5) == .agent6)
 precondition(ShortcutTarget.agent(at: 6) == nil)
@@ -131,6 +138,167 @@ let customFastShortcut = KeyboardShortcutBinding(keyCode: 3, modifiers: [.comman
 let migratedShortcutBindings = ShortcutDefaults.merging(into: [.fast: customFastShortcut])
 precondition(migratedShortcutBindings[.fast] == customFastShortcut)
 precondition(migratedShortcutBindings[.agent1] == ShortcutDefaults.bindings[.agent1])
+
+let homeShortcut = KeyboardShortcutBinding(keyCode: 115, modifiers: [], keyLabel: "Home")
+precondition(homeShortcut.displayName == "Home")
+precondition(homeShortcut.activationMode == .directKey)
+precondition(homeShortcut.activationMode.label == "物理按键映射 · 一级")
+precondition(ShortcutKeyCatalog.label(for: 115) == "Home")
+precondition(ShortcutKeyCatalog.label(for: 82) == "Num 0")
+precondition(ShortcutKeyCatalog.label(for: 0) == "A")
+precondition(ShortcutKeyCatalog.label(for: 56) == "左 Shift")
+
+let letterMapping = KeyboardShortcutBinding(keyCode: 0, modifiers: [], keyLabel: "A")
+precondition(letterMapping.activationMode == .directKey)
+
+var modifierKeyState = PhysicalModifierKeyState()
+precondition(modifierKeyState.update(keyCode: 56, eventFlagsRawValue: 1 << 17) == .down)
+modifierKeyState.setMappedKeySuppressed(true, keyCode: 56)
+precondition(modifierKeyState.modifierFlagsToStripRawValue == 1 << 17)
+precondition(modifierKeyState.update(keyCode: 60, eventFlagsRawValue: 1 << 17) == .down)
+precondition(modifierKeyState.modifierFlagsToStripRawValue == 0)
+precondition(modifierKeyState.update(keyCode: 60, eventFlagsRawValue: 1 << 17) == .up)
+precondition(modifierKeyState.modifierFlagsToStripRawValue == 1 << 17)
+precondition(modifierKeyState.update(keyCode: 56, eventFlagsRawValue: 0) == .up)
+precondition(modifierKeyState.modifierFlagsToStripRawValue == 0)
+
+let localizedHomeShortcut = KeyboardShortcutBinding(keyCode: 115, modifiers: [], keyLabel: "首页")
+precondition(localizedHomeShortcut != homeShortcut)
+precondition(localizedHomeShortcut.gesture == homeShortcut.gesture)
+
+var directKeyMatcher = DirectKeyEventMatcher()
+let directTargets: [UInt16: ShortcutTarget] = [115: .voice]
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .down,
+    isRepeat: true,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .suppress)
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .up,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .suppress)
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .trigger(.voice))
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .down,
+    isRepeat: true,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .suppress)
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .up,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .release(.voice))
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .up,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .passThrough)
+let modifierTargets: [UInt16: ShortcutTarget] = [56: .voice]
+precondition(directKeyMatcher.handle(
+    keyCode: 56,
+    modifiers: [],
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: modifierTargets
+) == .trigger(.voice))
+precondition(directKeyMatcher.handle(
+    keyCode: 56,
+    modifiers: [],
+    phase: .up,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: modifierTargets
+) == .release(.voice))
+let letterTargets: [UInt16: ShortcutTarget] = [0: .fast]
+precondition(directKeyMatcher.handle(
+    keyCode: 0,
+    modifiers: [],
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: letterTargets
+) == .trigger(.fast))
+precondition(directKeyMatcher.handle(
+    keyCode: 0,
+    modifiers: [],
+    phase: .up,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: letterTargets
+) == .release(.fast))
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [.shift],
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .trigger(.voice))
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [.shift],
+    phase: .up,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .release(.voice))
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: true,
+    targetsByKeyCode: directTargets
+) == .passThrough)
+precondition(directKeyMatcher.handle(
+    keyCode: 119,
+    modifiers: [],
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .passThrough)
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .trigger(.voice))
+precondition(directKeyMatcher.drainTargets() == [.voice])
+precondition(directKeyMatcher.handle(
+    keyCode: 115,
+    modifiers: [],
+    phase: .up,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByKeyCode: directTargets
+) == .passThrough)
 
 let initialPanelFrame = NSRect(x: 100, y: 200, width: 438, height: 438)
 let enlargedTopLeftFrame = PanelResizeCorner.topLeft.frame(size: 500, anchoredTo: initialPanelFrame)

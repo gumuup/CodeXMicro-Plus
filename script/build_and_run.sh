@@ -6,8 +6,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 PROCESS_PATTERN='CodeXMicro\+\+'
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="2.0.1"
-BUILD_NUMBER="201"
+VERSION="2.5.0"
+BUILD_NUMBER="250"
 MIN_SYSTEM_VERSION="14.0"
 SIGNING_NAME="CodexMicro Local Development"
 SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -36,8 +36,43 @@ pkill -x "$BUILD_PRODUCT" >/dev/null 2>&1 || true
 pkill -x CodexMicro >/dev/null 2>&1 || true
 
 cd "$ROOT_DIR"
-swift build
-BUILD_BINARY="$(swift build --show-bin-path)/$BUILD_PRODUCT"
+if swift build; then
+  BUILD_BINARY="$(swift build --show-bin-path)/$BUILD_PRODUCT"
+else
+  DIRECT_SWIFTC="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+  DIRECT_SDK="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+  DIRECT_BUILD_DIR="$ROOT_DIR/.build/direct"
+  DIRECT_MODULE_CACHE="$DIRECT_BUILD_DIR/module-cache"
+  case "$(uname -m)" in
+    arm64) DIRECT_TARGET="arm64-apple-macosx$MIN_SYSTEM_VERSION" ;;
+    x86_64) DIRECT_TARGET="x86_64-apple-macosx$MIN_SYSTEM_VERSION" ;;
+    *) echo "Unsupported build architecture: $(uname -m)" >&2; exit 1 ;;
+  esac
+
+  if [[ ! -x "$DIRECT_SWIFTC" || ! -d "$DIRECT_SDK" ]]; then
+    echo "swift build failed and the direct Xcode toolchain is unavailable" >&2
+    exit 1
+  fi
+
+  echo "swift build unavailable; falling back to the Xcode Swift toolchain"
+  mkdir -p "$DIRECT_BUILD_DIR" "$DIRECT_MODULE_CACHE"
+  SWIFT_SOURCES=()
+  while IFS= read -r source; do
+    SWIFT_SOURCES+=("$source")
+  done < <(/usr/bin/find "$ROOT_DIR/Sources/CodeXMicroApp" -name '*.swift' -type f -print | /usr/bin/sort)
+
+  BUILD_BINARY="$DIRECT_BUILD_DIR/$BUILD_PRODUCT"
+  "$DIRECT_SWIFTC" \
+    -swift-version 6 \
+    -strict-concurrency=complete \
+    -warnings-as-errors \
+    -parse-as-library \
+    -sdk "$DIRECT_SDK" \
+    -target "$DIRECT_TARGET" \
+    -module-cache-path "$DIRECT_MODULE_CACHE" \
+    "${SWIFT_SOURCES[@]}" \
+    -o "$BUILD_BINARY"
+fi
 
 rm -rf "$APP_BUNDLE" "$LEGACY_APP_BUNDLE" "$DIST_DIR/CodexMicro++.app" "$DIST_DIR/CodexMicro.app"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"

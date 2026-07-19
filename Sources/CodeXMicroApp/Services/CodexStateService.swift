@@ -170,7 +170,7 @@ actor CodexStateService {
                 }
                 return data
             }
-            let initialize = #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codexmicro-plus-plus","version":"2.0.1"}}}"# + "\n"
+            let initialize = #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codexmicro-plus-plus","version":"2.5.0"}}}"# + "\n"
             input.fileHandleForWriting.write(Data(initialize.utf8))
 
             let waitResult = await waitForTermination(terminationEvents, timeout: .seconds(5))

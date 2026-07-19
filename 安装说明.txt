@@ -1,4 +1,4 @@
-CodeXMicro++ 2.0.1 安装说明 / Installation Guide
+CodeXMicro++ 2.5.0 安装说明 / Installation Guide
 ================================================
 
 系统要求 / Requirements
@@ -12,10 +12,18 @@ CodeXMicro++ 2.0.1 安装说明 / Installation Guide
 3. 按提示进入“系统设置 → 隐私与安全性 → 辅助功能”，允许 CodeXMicro++。
 4. 重新打开 CodeXMicro++。
 
+辅助功能权限用于接管你在“自定义按键”中主动映射的 Home、字母或
+左右 Shift 等物理按键，并向本机 Codex 发送操作。键盘事件仅在内存中与
+绑定比较，未命中内容不会保存或上传。
+
 1. Drag CodeXMicro++.app onto “应用程序 Applications”.
 2. On first launch, Control-click CodeXMicro++ in Applications and choose Open.
 3. In System Settings → Privacy & Security → Accessibility, allow CodeXMicro++.
 4. Reopen CodeXMicro++.
+
+Accessibility access is used to take over physical keys you explicitly map,
+including standalone modifier keys, and send the selected action to the local Codex app. Events are compared only in
+memory; unmatched keyboard input is not stored or uploaded.
 
 说明 / Note
 当前安装包未经过 Apple 公证，因此首次打开会出现安全提示；Control-click → Open

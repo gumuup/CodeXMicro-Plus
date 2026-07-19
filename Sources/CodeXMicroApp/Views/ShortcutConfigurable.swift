@@ -8,16 +8,19 @@ struct ShortcutMenuContent: View {
         Button {
             store.beginShortcutRecording(for: target)
         } label: {
-            Label("设置快捷键…", systemImage: "keyboard")
+            Label("设置按键映射…", systemImage: "keyboard")
         }
 
         if let shortcut = store.shortcut(for: target) {
             Divider()
-            Text("当前：\(shortcut.displayName)")
+            Text("当前：\(shortcut.displayName) · \(shortcut.activationMode.label)")
+            if let issue = store.shortcutRegistrationIssue(for: target) {
+                Label("未生效：\(issue)", systemImage: "exclamationmark.triangle.fill")
+            }
             Button(role: .destructive) {
                 store.clearShortcut(for: target)
             } label: {
-                Label("清除快捷键", systemImage: "delete.left")
+                Label("清除按键映射", systemImage: "delete.left")
             }
         }
     }

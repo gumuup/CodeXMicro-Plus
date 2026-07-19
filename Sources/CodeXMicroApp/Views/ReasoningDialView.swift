@@ -50,7 +50,7 @@ struct ReasoningDialView: View {
             .background(Color.clear)
         }
         .contentShape(RoundedRectangle(cornerRadius: scaled(17)))
-        .help("点击左侧减小、右侧增加；右键对应半区设置快捷键；也可双指滚动或上下拖动")
+        .help("点击左侧减小、右侧增加；右键对应半区设置按键映射；也可双指滚动或上下拖动")
         .accessibilityLabel("推理强度旋钮，当前\(level.label)")
     }
 

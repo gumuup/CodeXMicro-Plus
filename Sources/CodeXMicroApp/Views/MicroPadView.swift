@@ -51,7 +51,12 @@ private struct MicroPadSurface: View {
                         level: store.reasoningLevel,
                         onAdjust: store.adjustReasoning,
                         shortcutName: { step in
-                            store.shortcut(for: reasoningShortcutTarget(for: step))?.displayName
+                            let target = reasoningShortcutTarget(for: step)
+                            return store.shortcut(for: target).map {
+                                let issue = store.shortcutRegistrationIssue(for: target)
+                                return "\($0.displayName) · \($0.activationMode.label)"
+                                    + (issue.map { " · ⚠︎ \($0)" } ?? "")
+                            }
                         },
                         onConfigureShortcut: { step in
                             store.beginShortcutRecording(for: reasoningShortcutTarget(for: step))
@@ -332,7 +337,7 @@ private struct MicroPadSurface: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.1"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.5.0"
     }
 
     private var screwHeads: some View {
@@ -382,7 +387,7 @@ private struct MicroPadSurface: View {
         if let recordingTarget = store.shortcutRecordingTarget {
             Button(action: store.cancelShortcutRecording) {
                 HStack(spacing: scaled(5)) {
-                    Text(store.feedbackMessage ?? "为 \(recordingTarget.title) 按下快捷键 · Esc 取消 · Delete 清除")
+                    Text(store.feedbackMessage ?? "为 \(recordingTarget.title) 轻点任意单键，或按下组合键")
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: scaled(10), weight: .bold))
                 }
@@ -394,8 +399,8 @@ private struct MicroPadSurface: View {
                 .shadow(radius: scaled(8))
             }
             .buttonStyle(.plain)
-            .help("点击取消快捷键设置")
-            .accessibilityLabel("取消 \(recordingTarget.title) 的快捷键设置")
+            .help("点击取消按键映射设置")
+            .accessibilityLabel("取消 \(recordingTarget.title) 的按键映射设置")
             .offset(y: -scaled(201))
             .transition(.move(edge: .top).combined(with: .opacity))
         } else if let message = store.feedbackMessage {
@@ -445,7 +450,10 @@ private struct MicroPadSurface: View {
         guard let shortcut = store.shortcut(for: target) else {
             return "设置 \(target.title)…"
         }
-        return "设置 \(target.title)…（当前 \(shortcut.displayName)）"
+        let issue = store.shortcutRegistrationIssue(for: target)
+        return "设置 \(target.title)…（\(shortcut.displayName) · \(shortcut.activationMode.label)"
+            + (issue.map { " · ⚠︎ \($0)" } ?? "")
+            + "）"
     }
 
     private func shortcutTarget(for action: MicroAction) -> ShortcutTarget {
