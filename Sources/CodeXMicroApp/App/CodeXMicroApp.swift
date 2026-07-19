@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelPositionCancellable: AnyCancellable?
     private var shortcutRecordingCancellable: AnyCancellable?
     private var applicationActiveBeforeRecording: NSRunningApplication?
+    private var didTakePanelFocusForShortcutRecording = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -120,6 +121,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let panel else { return }
         if isRecording {
             let frontmost = NSWorkspace.shared.frontmostApplication
+            let isConfiguringInSettings = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+                && NSApp.keyWindow != nil
+                && NSApp.keyWindow !== panel
+            if isConfiguringInSettings {
+                didTakePanelFocusForShortcutRecording = false
+                applicationActiveBeforeRecording = nil
+                return
+            }
+
+            didTakePanelFocusForShortcutRecording = true
             applicationActiveBeforeRecording = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier
                 ? nil
                 : frontmost
@@ -129,6 +140,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        guard didTakePanelFocusForShortcutRecording else { return }
+        didTakePanelFocusForShortcutRecording = false
         panel.allowsKeyFocus = false
         panel.resignKey()
         panel.orderFrontRegardless()
