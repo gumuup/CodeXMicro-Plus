@@ -53,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         createPanel()
+        store.quickLaunchHandler = { [weak self] in
+            self?.togglePanel()
+        }
         panelPositionCancellable = store.$panelPosition
             .removeDuplicates()
             .sink { [weak self] position in
@@ -219,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.level = .floating
         case .bottom:
             panel.isFloatingPanel = false
-            let desktopLevel = Int(CGWindowLevelForKey(.desktopWindow)) + 1
+            let desktopLevel = Int(CGWindowLevelForKey(.desktopIconWindow)) + 1
             panel.level = NSWindow.Level(rawValue: desktopLevel)
         }
     }

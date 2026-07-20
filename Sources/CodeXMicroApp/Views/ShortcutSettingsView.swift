@@ -38,7 +38,7 @@ struct ShortcutSettingsView: View {
                     }
                 }
 
-                Text("映射仅保存在本机；键盘事件只在内存中与已绑定键码比较，未命中内容不记录、不上传。")
+                Text("映射仅保存在本机；监听只匹配已设置的键码，不记录、不上传其他键盘输入。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -55,14 +55,14 @@ struct ShortcutSettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("带修饰键 · 一级组合映射", systemImage: "command")
                         .font(.headline)
-                    Text("按住 ⌃⌥⇧⌘ 后再按其他键，会录入组合按键映射。组合键与单键使用同一个底层监听，不再申请系统独占热键，因此不会因其他程序注册过快捷键而失效。若只想映射 Shift 本身，请单独轻点再松开 Shift。")
+                    Text("按住 ⌃⌥⇧⌘ 后再按其他键，会录入组合快捷键。组合键与单键使用同一个底层监听，不再申请系统热点；若键位重复，会自动改绑到新功能。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
             Section("自定义按键") {
-                ForEach(ShortcutTarget.allCases, id: \.self) { target in
+                ForEach(ShortcutTarget.configurablePadCases, id: \.self) { target in
                     ShortcutBindingRow(store: store, target: target)
                 }
             }
@@ -72,20 +72,27 @@ struct ShortcutSettingsView: View {
 
     private var listeningStatusTitle: String {
         guard store.hasKeyBindings else { return "尚未配置按键映射" }
-        guard store.automation.isAccessibilityTrusted else { return "按键映射等待授权" }
+        guard store.automation.isAccessibilityTrusted else {
+            return "按键映射等待辅助功能授权"
+        }
+        if !store.shortcutRegistrationFailures.isEmpty { return "部分按键映射未生效" }
         if !store.isKeyMonitoringActive { return "按键映射监听未启动" }
         return "单键与组合键监听已就绪"
     }
 
     private var listeningStatusIcon: String {
         guard store.hasKeyBindings else { return "pause.circle" }
-        guard store.automation.isAccessibilityTrusted else { return "exclamationmark.shield.fill" }
+        guard store.automation.isAccessibilityTrusted else {
+            return "exclamationmark.shield.fill"
+        }
+        if !store.shortcutRegistrationFailures.isEmpty { return "exclamationmark.triangle.fill" }
         return store.isKeyMonitoringActive ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
     }
 
     private var listeningStatusColor: Color {
         guard store.hasKeyBindings else { return .secondary }
         guard store.automation.isAccessibilityTrusted else { return .orange }
+        if !store.shortcutRegistrationFailures.isEmpty { return .red }
         return store.isKeyMonitoringActive ? .green : .red
     }
 }

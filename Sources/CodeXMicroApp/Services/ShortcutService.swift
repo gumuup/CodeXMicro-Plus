@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import OSLog
 
 private enum DirectKeyEventKind: Sendable {
@@ -57,6 +58,27 @@ private let shortcutDirectKeyEventTapCallback: CGEventTapCallBack = { _, type, e
     return Unmanaged.passUnretained(event)
 }
 
+private let shortcutHotKeyEventHandler: EventHandlerUPP = { _, event, userData in
+    guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+    var hotKeyID = EventHotKeyID()
+    let status = GetEventParameter(
+        event,
+        EventParamName(kEventParamDirectObject),
+        EventParamType(typeEventHotKeyID),
+        nil,
+        MemoryLayout<EventHotKeyID>.size,
+        nil,
+        &hotKeyID
+    )
+    guard status == noErr else { return status }
+    let service = Unmanaged<ShortcutService>.fromOpaque(userData).takeUnretainedValue()
+    let eventKind = GetEventKind(event)
+    MainActor.assumeIsolated {
+        service.handleSystemHotKey(id: hotKeyID.id, isPressed: eventKind == kEventHotKeyPressed)
+    }
+    return noErr
+}
+
 @MainActor
 final class ShortcutService {
     private static let logger = Logger(subsystem: "com.gumu.codexmicro.virtual", category: "shortcuts")
@@ -69,16 +91,27 @@ final class ShortcutService {
     enum RegistrationFailure: Equatable {
         case duplicateBinding
         case shadowedByPhysicalMapping
+        case systemHotKeyConflict
+        case hotKeyRegistrationUnavailable
         case accessibilityRequired
         case directMonitorUnavailable
 
         var preventsSaving: Bool {
             switch self {
-            case .duplicateBinding, .shadowedByPhysicalMapping: true
-            case .accessibilityRequired, .directMonitorUnavailable: false
+            case .duplicateBinding, .shadowedByPhysicalMapping,
+                 .hotKeyRegistrationUnavailable: true
+            case .systemHotKeyConflict, .accessibilityRequired,
+                 .directMonitorUnavailable: false
             }
         }
     }
+
+    private struct RegisteredHotKey: @unchecked Sendable {
+        let target: ShortcutTarget
+        let reference: EventHotKeyRef
+    }
+
+    private static let hotKeySignature: OSType = 0x4344_584D
 
     private var bindings: [ShortcutTarget: KeyboardShortcutBinding] = [:]
     private var recordingTarget: ShortcutTarget?
@@ -88,6 +121,9 @@ final class ShortcutService {
     private var combinationKeyEventMatcher = CombinationKeyEventMatcher()
     private var physicalModifierKeyState = PhysicalModifierKeyState()
     private var pendingRecordingModifierKeyCode: UInt16?
+    private var registeredHotKeysByID: [UInt32: RegisteredHotKey] = [:]
+    private var pressedHotKeyIDs: Set<UInt32> = []
+    nonisolated(unsafe) private var hotKeyEventHandler: EventHandlerRef?
     nonisolated(unsafe) private var localMonitor: Any?
     nonisolated(unsafe) private var directKeyEventTap: CFMachPort?
     nonisolated(unsafe) private var directKeyRunLoopSource: CFRunLoopSource?
@@ -97,6 +133,10 @@ final class ShortcutService {
 
     deinit {
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        for hotKey in registeredHotKeysByID.values {
+            UnregisterEventHotKey(hotKey.reference)
+        }
+        if let hotKeyEventHandler { RemoveEventHandler(hotKeyEventHandler) }
         if let directKeyRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), directKeyRunLoopSource, .commonModes)
         }
@@ -107,8 +147,28 @@ final class ShortcutService {
     }
 
     var isKeyMonitoringActive: Bool {
-        guard !bindings.isEmpty, let directKeyEventTap else { return false }
-        return CGEvent.tapIsEnabled(tap: directKeyEventTap)
+        guard !bindings.isEmpty else { return false }
+        let priorityBindings = bindings.filter { $0.key != .quickLaunch }
+        let priorityMonitoringActive = priorityBindings.isEmpty
+            || directKeyEventTap.map { CGEvent.tapIsEnabled(tap: $0) } == true
+        let quickLaunchActive = bindings[.quickLaunch] == nil
+            || registeredHotKeysByID.values.contains { $0.target == .quickLaunch }
+        return priorityMonitoringActive && quickLaunchActive
+    }
+
+    func isActive(_ target: ShortcutTarget) -> Bool {
+        guard let binding = bindings[target] else { return false }
+        switch binding.activationMode {
+        case .directKey:
+            return directKeyTargetsByKeyCode[binding.keyCode] == target
+                && directKeyEventTap.map { CGEvent.tapIsEnabled(tap: $0) } == true
+        case .registeredHotKey:
+            if target == .quickLaunch {
+                return registeredHotKeysByID.values.contains { $0.target == target }
+            }
+            return combinationTargetsByGesture[binding.gesture] == target
+                && directKeyEventTap.map { CGEvent.tapIsEnabled(tap: $0) } == true
+        }
     }
 
     func start(
@@ -137,6 +197,7 @@ final class ShortcutService {
 
     func beginRecording(for target: ShortcutTarget) {
         releaseSuppressedKeyEvents()
+        unregisterSystemHotKeys()
         pendingRecordingModifierKeyCode = nil
         recordingTarget = target
         _ = installDirectKeyMonitorIfNeeded()
@@ -267,7 +328,7 @@ final class ShortcutService {
         default: return eventDecision(suppress: false)
         }
 
-        var outcome = directKeyEventMatcher.handle(
+        let directOutcome = directKeyEventMatcher.handle(
             keyCode: event.keyCode,
             modifiers: event.modifiers,
             phase: phase,
@@ -275,8 +336,8 @@ final class ShortcutService {
             isSynthetic: event.isSynthetic,
             targetsByKeyCode: directKeyTargetsByKeyCode
         )
-        if outcome == .passThrough, event.kind == .down || event.kind == .up {
-            outcome = combinationKeyEventMatcher.handle(
+        let outcome = if case .passThrough = directOutcome {
+            combinationKeyEventMatcher.handle(
                 keyCode: event.keyCode,
                 modifiers: event.modifiers,
                 phase: phase,
@@ -284,8 +345,9 @@ final class ShortcutService {
                 isSynthetic: event.isSynthetic,
                 targetsByGesture: combinationTargetsByGesture
             )
+        } else {
+            directOutcome
         }
-
         switch outcome {
         case .passThrough:
             return eventDecision(suppress: false)
@@ -307,19 +369,26 @@ final class ShortcutService {
 
     private func registerCurrentBindings() -> [ShortcutTarget: RegistrationFailure] {
         releaseSuppressedKeyEvents()
+        unregisterSystemHotKeys()
         directKeyTargetsByKeyCode.removeAll()
         combinationTargetsByGesture.removeAll()
 
         var failures: [ShortcutTarget: RegistrationFailure] = [:]
+        let priorityBindings = ShortcutTarget.allCases.compactMap { target -> (ShortcutTarget, KeyboardShortcutBinding)? in
+            guard target != .quickLaunch, let binding = bindings[target] else { return nil }
+            return (target, binding)
+        }
         let directBindings = ShortcutTarget.allCases.compactMap { target -> (ShortcutTarget, KeyboardShortcutBinding)? in
-            guard let binding = bindings[target], binding.activationMode == .directKey else { return nil }
+            guard target != .quickLaunch,
+                  let binding = bindings[target],
+                  binding.activationMode == .directKey else { return nil }
             return (target, binding)
         }
 
-        if bindings.isEmpty {
+        if priorityBindings.isEmpty {
             uninstallDirectKeyMonitor()
         } else if let failure = installDirectKeyMonitorIfNeeded() {
-            for target in bindings.keys { failures[target] = failure }
+            for (target, _) in priorityBindings { failures[target] = failure }
         } else {
             for (target, binding) in directBindings {
                 if directKeyTargetsByKeyCode[binding.keyCode] == nil {
@@ -347,7 +416,7 @@ final class ShortcutService {
             }
         }
 
-        for target in ShortcutTarget.allCases {
+        for target in ShortcutTarget.allCases where target != .quickLaunch {
             guard let binding = bindings[target], binding.activationMode == .registeredHotKey else { continue }
             guard !mappedKeyCodes.contains(binding.keyCode),
                   binding.modifiers.intersection(fullyMappedModifierFlags).isEmpty else {
@@ -359,11 +428,99 @@ final class ShortcutService {
                 continue
             }
             combinationTargetsByGesture[binding.gesture] = target
-            Self.logger.info(
-                "Monitoring \(target.rawValue, privacy: .public) as combination \(binding.displayName, privacy: .public)"
+            Self.logger.info("Monitoring \(target.rawValue, privacy: .public) as priority combination \(binding.displayName, privacy: .public)")
+        }
+
+        if let binding = bindings[.quickLaunch] {
+            let target = ShortcutTarget.quickLaunch
+            guard binding.activationMode == .registeredHotKey else {
+                failures[target] = .hotKeyRegistrationUnavailable
+                return failures
+            }
+            guard !mappedKeyCodes.contains(binding.keyCode),
+                  binding.modifiers.intersection(fullyMappedModifierFlags).isEmpty else {
+                failures[target] = .shadowedByPhysicalMapping
+                return failures
+            }
+            guard combinationTargetsByGesture[binding.gesture] == nil else {
+                failures[target] = .duplicateBinding
+                return failures
+            }
+            guard !SystemShortcutRegistry.contains(binding) else {
+                failures[target] = .systemHotKeyConflict
+                Self.logger.warning("Rejected quick launch: \(binding.displayName, privacy: .public) is reserved by macOS")
+                return failures
+            }
+            guard installHotKeyEventHandlerIfNeeded() else {
+                failures[target] = .hotKeyRegistrationUnavailable
+                return failures
+            }
+
+            let hotKeyID: UInt32 = 1
+            var reference: EventHotKeyRef?
+            let status = RegisterEventHotKey(
+                UInt32(binding.keyCode),
+                binding.modifiers.carbonFlags,
+                EventHotKeyID(signature: Self.hotKeySignature, id: hotKeyID),
+                GetApplicationEventTarget(),
+                0,
+                &reference
             )
+            guard status == noErr, let reference else {
+                failures[target] = status == eventHotKeyExistsErr
+                    ? .systemHotKeyConflict
+                    : .hotKeyRegistrationUnavailable
+                Self.logger.warning(
+                    "Rejected \(target.rawValue, privacy: .public): system registration for \(binding.displayName, privacy: .public) failed with \(status)"
+                )
+                return failures
+            }
+            registeredHotKeysByID[hotKeyID] = RegisteredHotKey(target: target, reference: reference)
+            Self.logger.info("Registered quick launch as checked system hot key \(binding.displayName, privacy: .public)")
         }
         return failures
+    }
+
+    fileprivate func handleSystemHotKey(id: UInt32, isPressed: Bool) {
+        guard let hotKey = registeredHotKeysByID[id] else { return }
+        if isPressed {
+            guard pressedHotKeyIDs.insert(id).inserted else { return }
+            onTrigger?(hotKey.target)
+        } else if pressedHotKeyIDs.remove(id) != nil {
+            onRelease?(hotKey.target)
+        }
+    }
+
+    private func installHotKeyEventHandlerIfNeeded() -> Bool {
+        if hotKeyEventHandler != nil { return true }
+        let eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+        ]
+        let status = eventTypes.withUnsafeBufferPointer { buffer in
+            InstallEventHandler(
+                GetApplicationEventTarget(),
+                shortcutHotKeyEventHandler,
+                buffer.count,
+                buffer.baseAddress,
+                Unmanaged.passUnretained(self).toOpaque(),
+                &hotKeyEventHandler
+            )
+        }
+        return status == noErr && hotKeyEventHandler != nil
+    }
+
+    private func unregisterSystemHotKeys() {
+        for id in pressedHotKeyIDs {
+            if let hotKey = registeredHotKeysByID[id] {
+                onRelease?(hotKey.target)
+            }
+        }
+        for hotKey in registeredHotKeysByID.values {
+            UnregisterEventHotKey(hotKey.reference)
+        }
+        registeredHotKeysByID.removeAll()
+        pressedHotKeyIDs.removeAll()
     }
 
     private func installDirectKeyMonitorIfNeeded() -> RegistrationFailure? {
@@ -460,6 +617,15 @@ final class ShortcutService {
 }
 
 private extension ShortcutModifiers {
+    var carbonFlags: UInt32 {
+        var flags: UInt32 = 0
+        if contains(.command) { flags |= UInt32(cmdKey) }
+        if contains(.control) { flags |= UInt32(controlKey) }
+        if contains(.option) { flags |= UInt32(optionKey) }
+        if contains(.shift) { flags |= UInt32(shiftKey) }
+        return flags
+    }
+
     init(_ flags: CGEventFlags) {
         var value: ShortcutModifiers = []
         if flags.contains(.maskCommand) { value.insert(.command) }

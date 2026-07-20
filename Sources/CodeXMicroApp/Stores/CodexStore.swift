@@ -73,6 +73,7 @@ final class CodexStore: ObservableObject {
     private var pendingReasoningLevel: ReasoningLevel?
     private var pendingReasoningDeadline = Date.distantPast
     private var lastKnownAccessibilityTrust = false
+    var quickLaunchHandler: (() -> Void)?
 
     init(
         stateService: CodexStateService = CodexStateService(),
@@ -97,17 +98,35 @@ final class CodexStore: ObservableObject {
         let savedShortcutBindings = UserDefaults.standard.data(forKey: Keys.shortcutBindings).flatMap {
             try? JSONDecoder().decode([ShortcutTarget: KeyboardShortcutBinding].self, from: $0)
         }
-        let shouldInstallShortcutDefaults = savedShortcutBindings == nil
-            || UserDefaults.standard.integer(forKey: Keys.shortcutDefaultsVersion) < ShortcutDefaults.currentVersion
-        if shouldInstallShortcutDefaults {
-            let migratedBindings = ShortcutDefaults.merging(into: savedShortcutBindings ?? [:])
+        let installedDefaultsVersion = UserDefaults.standard.integer(forKey: Keys.shortcutDefaultsVersion)
+        if var migratedBindings = savedShortcutBindings {
+            if installedDefaultsVersion < 1 {
+                migratedBindings = ShortcutDefaults.merging(into: migratedBindings)
+            }
+            if installedDefaultsVersion < 2,
+               migratedBindings[.quickLaunch] == nil {
+                migratedBindings[.quickLaunch] = ShortcutDefaults.bindings[.quickLaunch]
+            }
+            if installedDefaultsVersion < 3,
+               migratedBindings[.togglePanelPosition] == nil {
+                migratedBindings[.togglePanelPosition] = ShortcutDefaults.bindings[.togglePanelPosition]
+            }
+            if installedDefaultsVersion < 4,
+               migratedBindings[.quickLaunch] == ShortcutDefaults.legacyQuickLaunchBinding {
+                migratedBindings[.quickLaunch] = ShortcutDefaults.bindings[.quickLaunch]
+            }
             self.shortcutBindings = migratedBindings
-            if let data = try? JSONEncoder().encode(migratedBindings) {
+            if installedDefaultsVersion < ShortcutDefaults.currentVersion,
+               let data = try? JSONEncoder().encode(migratedBindings) {
                 UserDefaults.standard.set(data, forKey: Keys.shortcutBindings)
                 UserDefaults.standard.set(ShortcutDefaults.currentVersion, forKey: Keys.shortcutDefaultsVersion)
             }
         } else {
-            self.shortcutBindings = savedShortcutBindings ?? [:]
+            self.shortcutBindings = ShortcutDefaults.bindings
+            if let data = try? JSONEncoder().encode(ShortcutDefaults.bindings) {
+                UserDefaults.standard.set(data, forKey: Keys.shortcutBindings)
+                UserDefaults.standard.set(ShortcutDefaults.currentVersion, forKey: Keys.shortcutDefaultsVersion)
+            }
         }
         self.shortcutRecordingTarget = nil
         self.lastKnownAccessibilityTrust = self.automation.isAccessibilityTrusted
@@ -289,8 +308,16 @@ final class CodexStore: ObservableObject {
         automation.requestAccessibility()
     }
 
-    func retryShortcutMonitoring() {
+    func retryShortcutMonitoring(for requestedTarget: ShortcutTarget? = nil) {
         let failures = updateShortcutRegistrations()
+        if let requestedTarget, let binding = shortcutBindings[requestedTarget] {
+            if let failure = failures[requestedTarget] {
+                showFeedback(registrationFailureMessage(failure, binding: binding))
+            } else {
+                showFeedback("\(binding.displayName) 未发现 macOS 系统快捷键冲突")
+            }
+            return
+        }
         if let target = ShortcutTarget.allCases.first(where: { failures[$0] != nil }),
            let failure = failures[target], let binding = shortcutBindings[target] {
             showFeedback(registrationFailureMessage(failure, binding: binding))
@@ -299,6 +326,10 @@ final class CodexStore: ObservableObject {
 
     func shortcut(for target: ShortcutTarget) -> KeyboardShortcutBinding? {
         shortcutBindings[target]
+    }
+
+    func isShortcutActive(_ target: ShortcutTarget) -> Bool {
+        shortcutService.isActive(target)
     }
 
     var hasKeyBindings: Bool {
@@ -314,6 +345,10 @@ final class CodexStore: ObservableObject {
             "与另一个功能重复"
         case .shadowedByPhysicalMapping:
             "被一级物理按键映射覆盖"
+        case .systemHotKeyConflict:
+            "与 macOS 系统快捷键冲突"
+        case .hotKeyRegistrationUnavailable:
+            "系统热键注册失败"
         case .accessibilityRequired:
             "等待辅助功能授权后接管该按键"
         case .directMonitorUnavailable:
@@ -347,12 +382,38 @@ final class CodexStore: ObservableObject {
         showFeedback("已清除 \(target.title) 的按键映射")
     }
 
+    func restoreDefaultShortcut(for target: ShortcutTarget) {
+        guard let defaultBinding = ShortcutDefaults.bindings[target] else { return }
+        if shortcutRecordingTarget == target {
+            shortcutRecordingTarget = nil
+            shortcutService.cancelRecording()
+        }
+        let previousBindings = shortcutBindings
+        shortcutBindings[target] = defaultBinding
+        let failures = updateShortcutRegistrations()
+        if let failure = failures[target] {
+            if failure.preventsSaving {
+                shortcutBindings = previousBindings
+                _ = updateShortcutRegistrations()
+                showFeedback(registrationFailureMessage(failure, binding: defaultBinding))
+                return
+            }
+            showFeedback(registrationFailureMessage(failure, binding: defaultBinding))
+        } else {
+            showFeedback("\(target.title) 已恢复为 \(defaultBinding.displayName)")
+        }
+        saveShortcutBindings()
+    }
+
     private func tactilePress() {
         haptics.press(strength: hapticStrength, soundEnabled: keySoundEnabled)
     }
 
     private func triggerShortcut(_ target: ShortcutTarget) {
         switch target {
+        case .quickLaunch: quickLaunchHandler?()
+        case .togglePanelPosition:
+            panelPosition = panelPosition == .top ? .bottom : .top
         case .agent1: openTask(at: 0)
         case .agent2: openTask(at: 1)
         case .agent3: openTask(at: 2)
@@ -385,11 +446,23 @@ final class CodexStore: ObservableObject {
         switch event {
         case let .captured(target, binding):
             shortcutRecordingTimeoutTask?.cancel()
+            guard target != .quickLaunch || !binding.modifiers.isEmpty else {
+                shortcutRecordingTarget = nil
+                _ = updateShortcutRegistrations()
+                showFeedback("快速启动快捷键请至少包含 Control、Option、Shift 或 Command")
+                return
+            }
             let previousBindings = shortcutBindings
             let reassignedTarget = shortcutBindings.first(where: {
                 $0.key != target && $0.value.gesture == binding.gesture
             })?.key
             if let reassignedTarget {
+                if target == .quickLaunch {
+                    shortcutRecordingTarget = nil
+                    _ = updateShortcutRegistrations()
+                    showFeedback("\(binding.displayName) 已用于 \(reassignedTarget.title)，请设置其他按键")
+                    return
+                }
                 shortcutBindings.removeValue(forKey: reassignedTarget)
             }
             shortcutBindings[target] = binding
@@ -411,11 +484,8 @@ final class CodexStore: ObservableObject {
                 $0 == .shadowedByPhysicalMapping
             }.count
             let shadowedSuffix = shadowedCount > 0 ? " · 已覆盖 \(shadowedCount) 个组合" : ""
-            if let reassignedTarget {
-                showFeedback("\(binding.displayName) 已从 \(reassignedTarget.title) 改绑到 \(target.title) · \(binding.activationMode.label)\(shadowedSuffix)")
-            } else {
-                showFeedback("\(target.title)：\(binding.displayName) · \(binding.activationMode.label)\(shadowedSuffix)")
-            }
+            let reassignedSuffix = reassignedTarget.map { " · 已从 \($0.title) 改绑" } ?? ""
+            showFeedback("\(target.title)：\(binding.displayName) · \(binding.activationMode.label)\(reassignedSuffix)\(shadowedSuffix)")
         case .cancelled:
             shortcutRecordingTimeoutTask?.cancel()
             shortcutRecordingTarget = nil
@@ -473,6 +543,10 @@ final class CodexStore: ObservableObject {
             "\(binding.displayName) 已绑定到其他功能，请先改绑或清除"
         case .shadowedByPhysicalMapping:
             "\(binding.displayName) 被一级物理按键映射接管，已保留原设置"
+        case .systemHotKeyConflict:
+            "\(binding.displayName) 已保存，但与 macOS 系统快捷键重合，当前不会接管"
+        case .hotKeyRegistrationUnavailable:
+            "无法向 macOS 注册 \(binding.displayName)，请设置其他快捷键后重试"
         case .accessibilityRequired:
             "\(binding.displayName) 已保存；开启辅助功能权限后即可接管该按键"
         case .directMonitorUnavailable:
