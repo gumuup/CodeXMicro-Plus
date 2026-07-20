@@ -33,3 +33,13 @@ memory; unmatched keyboard input is not stored or uploaded.
 This build is not Apple-notarized, so macOS shows a security warning on first
 launch. Control-click → Open is required once. A future Developer ID notarized
 build can remove this warning.
+
+许可 / License
+允许免费下载及非商业使用、修改和分享，但须遵守安装包内 LICENSE 的
+PolyForm Noncommercial License 1.0.0。任何商业使用、商业集成、商业分发
+或为商业目的进行的修改，均须事先取得项目所有者的书面商业授权。
+
+Free download and noncommercial use, modification, and sharing are permitted
+under the bundled PolyForm Noncommercial License 1.0.0. Any commercial use,
+integration, distribution, or commercial-purpose modification requires a
+separate written commercial license. Contact: 1142929785@qq.com / gumuup.

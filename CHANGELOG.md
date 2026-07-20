@@ -2,6 +2,14 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## 未发布
+
+### 许可证
+
+- 项目从 MIT License 调整为 PolyForm Noncommercial License 1.0.0 与单独商业许可并行的双重授权模式。
+- 允许免费下载、非商业使用、非商业修改与分享；商业使用、商业集成、商业分发及商业目的修改须事先取得书面授权。
+- 新许可自本次变更生效的提交起适用；已按 MIT License 发布的 `v2.6.0` 及更早版本继续适用原许可。
+
 ## 2.6.0 — 2026-07-20
 
 ### 面板交互修复
