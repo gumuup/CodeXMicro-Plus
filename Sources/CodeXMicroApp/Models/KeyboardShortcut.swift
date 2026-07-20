@@ -49,6 +49,43 @@ enum ShortcutActivationMode: String, Sendable {
     }
 }
 
+enum SystemShortcutRegistry {
+    private static let relevantModifierMask: UInt = (1 << 17) | (1 << 18) | (1 << 19) | (1 << 20)
+
+    static func contains(_ binding: KeyboardShortcutBinding) -> Bool {
+        guard let domain = UserDefaults.standard.persistentDomain(forName: "com.apple.symbolichotkeys"),
+              let entries = domain["AppleSymbolicHotKeys"] as? [String: Any] else {
+            return false
+        }
+        return contains(binding, in: entries)
+    }
+
+    static func contains(_ binding: KeyboardShortcutBinding, in entries: [String: Any]) -> Bool {
+        let expectedModifiers = modifierFlags(for: binding.modifiers)
+        return entries.values.contains { rawEntry in
+            guard let entry = rawEntry as? [String: Any],
+                  (entry["enabled"] as? NSNumber)?.boolValue == true,
+                  let value = entry["value"] as? [String: Any],
+                  let parameters = value["parameters"] as? [NSNumber],
+                  parameters.count >= 3 else {
+                return false
+            }
+            let keyCode = UInt16(truncatingIfNeeded: parameters[1].uintValue)
+            let modifiers = parameters[2].uintValue & relevantModifierMask
+            return keyCode == binding.keyCode && modifiers == expectedModifiers
+        }
+    }
+
+    private static func modifierFlags(for modifiers: ShortcutModifiers) -> UInt {
+        var flags: UInt = 0
+        if modifiers.contains(.shift) { flags |= 1 << 17 }
+        if modifiers.contains(.control) { flags |= 1 << 18 }
+        if modifiers.contains(.option) { flags |= 1 << 19 }
+        if modifiers.contains(.command) { flags |= 1 << 20 }
+        return flags
+    }
+}
+
 enum ShortcutKeyCatalog {
     private static let dedicatedKeyLabels: [UInt16: String] = [
         64: "F17", 65: "Num .", 67: "Num ×", 69: "Num +", 71: "Num Clear",
@@ -297,9 +334,21 @@ struct CombinationKeyEventMatcher: Sendable {
 }
 
 enum ShortcutDefaults {
-    static let currentVersion = 1
+    static let currentVersion = 4
+
+    static let legacyQuickLaunchBinding = KeyboardShortcutBinding(
+        keyCode: 49,
+        modifiers: .control,
+        keyLabel: "Space"
+    )
 
     static let bindings: [ShortcutTarget: KeyboardShortcutBinding] = [
+        .quickLaunch: KeyboardShortcutBinding(
+            keyCode: 49,
+            modifiers: .option,
+            keyLabel: "Space"
+        ),
+        .togglePanelPosition: control(keyCode: 35, label: "P"),
         .fast: control(keyCode: 3, label: "F"),
         .approve: control(keyCode: 33, label: "["),
         .decline: control(keyCode: 30, label: "]"),
@@ -339,6 +388,8 @@ enum ShortcutDefaults {
 }
 
 enum ShortcutTarget: String, CaseIterable, Codable, Hashable, Sendable {
+    case quickLaunch
+    case togglePanelPosition
     case agent1, agent2, agent3, agent4, agent5, agent6
     case joystickUp, joystickRight, joystickDown, joystickLeft
     case fast, approve, decline, newTask
@@ -350,8 +401,14 @@ enum ShortcutTarget: String, CaseIterable, Codable, Hashable, Sendable {
         return targets.indices.contains(index) ? targets[index] : nil
     }
 
+    static var configurablePadCases: [ShortcutTarget] {
+        allCases.filter { $0 != .quickLaunch && $0 != .togglePanelPosition }
+    }
+
     var title: String {
         switch self {
+        case .quickLaunch: "快速启动"
+        case .togglePanelPosition: "切换悬浮位置"
         case .agent1: "A1"
         case .agent2: "A2"
         case .agent3: "A3"

@@ -85,7 +85,7 @@ private struct MicroPadSurface: View {
                 .frame(height: keySize)
 
                 HStack(spacing: spacing) {
-                    touchSensor
+                    toolboxSensor
                         .frame(width: keySize, height: keySize)
                     VoiceKeyView(
                         isActive: store.isVoicePressed,
@@ -232,23 +232,30 @@ private struct MicroPadSurface: View {
         .shortcutConfigurable(shortcutTarget(for: action), store: store)
     }
 
-    private var touchSensor: some View {
-        Button(action: store.toggleLayer) {
+    private var toolboxSensor: some View {
+        Button {
+            isToolboxPresented.toggle()
+        } label: {
             ZStack {
                 Circle()
                     .fill(RadialGradient(colors: [.black, Color(red: 0.15, green: 0.16, blue: 0.18)], center: .center, startRadius: scaled(1), endRadius: scaled(27)))
                     .frame(width: scaled(44), height: scaled(44))
                     .overlay { Circle().strokeBorder(.white.opacity(0.5), lineWidth: scaled(2)) }
                     .shadow(color: .black.opacity(0.32), radius: scaled(4), y: scaled(3))
-                Image(systemName: store.labelsVisible ? "eye.fill" : "eye.slash.fill")
+                Image(systemName: "shippingbox.fill")
                     .font(.system(size: scaled(18), weight: .semibold))
                     .foregroundStyle(.white.opacity(0.8))
             }
         }
         .buttonStyle(.plain)
-        .help(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
-        .accessibilityLabel(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
-        .shortcutConfigurable(.toggleLabels, store: store)
+        .help("打开 Codex 工具箱")
+        .accessibilityLabel("打开 Codex 工具箱")
+        .popover(isPresented: $isToolboxPresented, arrowEdge: .bottom) {
+            ToolboxView { action in
+                isToolboxPresented = false
+                store.perform(action)
+            }
+        }
     }
 
     @ViewBuilder private var codexStatusGlyph: some View {
@@ -268,11 +275,12 @@ private struct MicroPadSurface: View {
                     .foregroundStyle(.black.opacity(0.78))
                 }
             case .lifetimeConsumed:
+                let lifetimeText = TokenCountFormatter.compact(store.lifetimeTokens)
                 ZStack {
                     quotaRing(progress: store.lifetimeTokens == nil ? 0 : 1, color: .indigo)
                     VStack(spacing: -scaled(1)) {
-                        Text(TokenCountFormatter.compact(store.lifetimeTokens))
-                            .font(.system(size: scaled(11), weight: .heavy, design: .rounded))
+                        Text(lifetimeText)
+                            .font(.system(size: lifetimeTokenFontSize(for: lifetimeText), weight: .heavy, design: .rounded))
                         Text("累计消耗")
                             .font(.system(size: scaled(7), weight: .bold, design: .rounded))
                     }
@@ -282,6 +290,11 @@ private struct MicroPadSurface: View {
         } else {
             CodexMarkView().scaleEffect(0.63)
         }
+    }
+
+    private func lifetimeTokenFontSize(for text: String) -> CGFloat {
+        let numericText = text.trimmingCharacters(in: CharacterSet(charactersIn: "万亿"))
+        return scaled(numericText.count > 4 ? 10 : 11)
     }
 
     private var codexStatusHelp: String {
@@ -336,7 +349,7 @@ private struct MicroPadSurface: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.6.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.7.0"
     }
 
     private var screwHeads: some View {
@@ -354,18 +367,21 @@ private struct MicroPadSurface: View {
     private var chromeControls: some View {
         HStack(spacing: scaled(6)) {
             Button {
-                isToolboxPresented.toggle()
+                store.panelPosition = store.panelPosition == .top ? .bottom : .top
             } label: {
-                Image(systemName: "shippingbox.fill")
+                Image(systemName: store.panelPosition == .top ? "pin.fill" : "pin.slash")
             }
-            .help("打开 Codex 工具箱")
-            .accessibilityLabel("打开 Codex 工具箱")
-            .popover(isPresented: $isToolboxPresented, arrowEdge: .top) {
-                ToolboxView { action in
-                    isToolboxPresented = false
-                    store.perform(action)
-                }
+            .foregroundStyle(store.panelPosition == .top ? Color.accentColor : .black.opacity(0.42))
+            .help(store.panelPosition == .top ? "取消置顶，切换为沉底模式" : "钉住面板，切换为置顶模式")
+            .accessibilityLabel(store.panelPosition == .top ? "取消置顶" : "置顶面板")
+
+            Button(action: store.toggleLayer) {
+                Image(systemName: store.labelsVisible ? "eye.fill" : "eye.slash.fill")
             }
+            .foregroundStyle(store.labelsVisible ? Color.accentColor : .black.opacity(0.42))
+            .help(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
+            .accessibilityLabel(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
+            .shortcutConfigurable(.toggleLabels, store: store)
             SettingsLink {
                 Image(systemName: "gearshape.fill")
             }

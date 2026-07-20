@@ -6,8 +6,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 PROCESS_PATTERN='CodeXMicro\+\+'
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="2.6.0"
-BUILD_NUMBER="260"
+VERSION="2.7.0"
+BUILD_NUMBER="270"
 MIN_SYSTEM_VERSION="14.0"
 SIGNING_NAME="CodexMicro Local Development"
 SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -138,9 +138,9 @@ PLIST
 
 LAUNCHED_PID=""
 open_app() {
-  # Launch the bundle executable directly. LaunchServices may otherwise reopen
-  # an older /Applications copy that has the same bundle identifier.
-  "$APP_BINARY" >/dev/null 2>&1 &
+  # Launch this exact build. LaunchServices may otherwise reopen an older
+  # /Applications copy that has the same bundle identifier.
+  /usr/bin/nohup "$APP_BINARY" >/dev/null 2>&1 &
   LAUNCHED_PID="$!"
 }
 
@@ -161,7 +161,7 @@ case "$MODE" in
     ;;
   --verify|verify)
     open_app
-    sleep 2
+    sleep 3
     if [[ -z "$LAUNCHED_PID" ]] || ! kill -0 "$LAUNCHED_PID" >/dev/null 2>&1; then
       echo "$APP_NAME failed to stay running from $APP_BUNDLE" >&2
       exit 1

@@ -116,7 +116,10 @@ precondition(legacyShortcutPayload[.fast] == fastShortcut)
 precondition(ShortcutTarget.agent(at: 0) == .agent1)
 precondition(ShortcutTarget.agent(at: 5) == .agent6)
 precondition(ShortcutTarget.agent(at: 6) == nil)
-precondition(ShortcutTarget.allCases.count == 19)
+precondition(ShortcutTarget.allCases.count == 21)
+precondition(ShortcutTarget.configurablePadCases.count == 19)
+precondition(!ShortcutTarget.configurablePadCases.contains(.quickLaunch))
+precondition(!ShortcutTarget.configurablePadCases.contains(.togglePanelPosition))
 precondition(ShortcutDefaults.bindings.count == ShortcutTarget.allCases.count)
 precondition(CodexKeybindingResolver.parse("Ctrl+F")?.displayName == "⌃F")
 precondition(CodexKeybindingResolver.parse("Ctrl+Shift+D")?.displayName == "⌃⇧D")
@@ -125,6 +128,8 @@ precondition(CodexKeybindingResolver.parse("Ctrl+-")?.keyCode == 27)
 precondition(CodexKeybindingResolver.parse("Cmd+Shift+Left")?.displayName == "⇧⌘←")
 precondition(CodexKeybindingResolver.parse("Ctrl+Unknown") == nil)
 precondition(Set(ShortcutDefaults.bindings.values).count == ShortcutDefaults.bindings.count)
+precondition(ShortcutDefaults.bindings[.quickLaunch]?.displayName == "⌥Space")
+precondition(ShortcutDefaults.bindings[.togglePanelPosition]?.displayName == "⌃P")
 precondition(ShortcutDefaults.bindings[.fast]?.displayName == "⌃F")
 precondition(ShortcutDefaults.bindings[.approve]?.displayName == "⌃[")
 precondition(ShortcutDefaults.bindings[.decline]?.displayName == "⌃]")
@@ -159,6 +164,30 @@ precondition(homeShortcut.displayName == "Home")
 precondition(homeShortcut.activationMode == .directKey)
 precondition(homeShortcut.activationMode.label == "物理按键映射 · 一级")
 precondition(fastShortcut.activationMode.label == "组合按键映射 · 一级监听")
+let enabledControlSpace: [String: Any] = [
+    "60": [
+        "enabled": NSNumber(value: true),
+        "value": ["parameters": [NSNumber(value: 32), NSNumber(value: 49), NSNumber(value: 1 << 18)]]
+    ],
+    "64": [
+        "enabled": NSNumber(value: false),
+        "value": ["parameters": [NSNumber(value: 32), NSNumber(value: 49), NSNumber(value: 1 << 20)]]
+    ]
+]
+precondition(SystemShortcutRegistry.contains(ShortcutDefaults.legacyQuickLaunchBinding, in: enabledControlSpace))
+precondition(!SystemShortcutRegistry.contains(ShortcutDefaults.bindings[.quickLaunch]!, in: enabledControlSpace))
+precondition(!SystemShortcutRegistry.contains(ShortcutDefaults.bindings[.togglePanelPosition]!, in: enabledControlSpace))
+precondition(!SystemShortcutRegistry.contains(
+    KeyboardShortcutBinding(keyCode: 49, modifiers: .command, keyLabel: "Space"),
+    in: enabledControlSpace
+))
+let enabledOptionSpace: [String: Any] = [
+    "65": [
+        "enabled": NSNumber(value: true),
+        "value": ["parameters": [NSNumber(value: 32), NSNumber(value: 49), NSNumber(value: 1 << 19)]]
+    ]
+]
+precondition(SystemShortcutRegistry.contains(ShortcutDefaults.bindings[.quickLaunch]!, in: enabledOptionSpace))
 precondition(ShortcutKeyCatalog.label(for: 115) == "Home")
 precondition(ShortcutKeyCatalog.label(for: 82) == "Num 0")
 precondition(ShortcutKeyCatalog.label(for: 0) == "A")
