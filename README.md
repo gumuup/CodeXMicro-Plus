@@ -2,7 +2,7 @@
 
 ![CodeXMicro++ 虚拟控制面板](Sources/CodeXMicroApp/Resources/CodeXMicroHardware.png)
 
-一款为 Codex 桌面端设计的开源 macOS 悬浮控制面板。
+一款为 Codex 桌面端设计的源码可用 macOS 悬浮控制面板。
 
 CodeXMicro++ 把任务切换、Plan / Goal 模式、推理强度、Agent 状态、Token 用量和常用工作流放到一块始终置顶的 4 × 4「微型键盘」里。应用完全在本机运行，不上传任务、按键或 Token 数据。
 
@@ -217,4 +217,11 @@ codex-keybindings.json             Codex 快捷键配置
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE) 开源。
+本项目采用双重授权模式：
+
+- **免费非商业许可**：允许免费下载，并依据 [PolyForm Noncommercial License 1.0.0](LICENSE) 用于个人学习、研究、实验、爱好项目和其他协议允许的非商业目的；非商业修改与分发必须保留许可证及 Required Notice。
+- **商业许可**：企业内部使用、客户项目、付费产品或服务、商业集成、收费分发，以及为商业目的进行的修改或衍生开发，均须事先取得项目所有者的书面授权。
+
+商业授权请联系邮箱 [1142929785@qq.com](mailto:1142929785@qq.com) 或微信 `gumuup`，具体范围见 [商业授权说明](COMMERCIAL-LICENSE.md)。
+
+本项目属于“源码可用（source-available）”，由于限制商业用途，不属于 OSI 定义的开源软件。此前已经按 MIT License 发布的 `v2.6.0` 及更早版本继续适用原许可，新协议不追溯撤销既有授权。
