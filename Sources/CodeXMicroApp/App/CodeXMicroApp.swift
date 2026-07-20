@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import OSLog
 import SwiftUI
 
 final class FloatingPanel: NSPanel {
@@ -36,10 +37,16 @@ final class TransparentHostingView<Content: View>: NSHostingView<Content> {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let logger = Logger(
+        subsystem: "com.gumu.codexmicro.virtual",
+        category: "application"
+    )
+
     let store = CodexStore()
     private var panel: FloatingPanel?
     private var panelPositionCancellable: AnyCancellable?
     private var shortcutRecordingCancellable: AnyCancellable?
+    private var startupTask: Task<Void, Never>?
     private var applicationActiveBeforeRecording: NSRunningApplication?
     private var didTakePanelFocusForShortcutRecording = false
 
@@ -57,7 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] isRecording in
                 self?.setShortcutRecordingFocus(isRecording)
             }
-        store.start()
+        startAfterRetiringDuplicateInstances()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        startupTask?.cancel()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -106,6 +117,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         panel.orderFrontRegardless()
         self.panel = panel
+    }
+
+    private func startAfterRetiringDuplicateInstances() {
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            store.start()
+            return
+        }
+
+        let duplicateInstances = NSWorkspace.shared.runningApplications.filter {
+            $0.processIdentifier != currentPID && $0.bundleIdentifier == bundleIdentifier
+        }
+        guard !duplicateInstances.isEmpty else {
+            store.start()
+            return
+        }
+
+        for application in duplicateInstances {
+            Self.logger.notice(
+                "Retiring duplicate instance pid=\(application.processIdentifier, privacy: .public)"
+            )
+            _ = application.terminate()
+        }
+
+        startupTask = Task { @MainActor [weak self] in
+            // Two active event taps would execute every mapping twice. Give the
+            // previous instance a brief graceful-termination window.
+            for _ in 0..<12 {
+                guard !Task.isCancelled else { return }
+                if duplicateInstances.allSatisfy(\.isTerminated) { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+
+            for application in duplicateInstances where !application.isTerminated {
+                Self.logger.warning(
+                    "Force retiring duplicate instance pid=\(application.processIdentifier, privacy: .public)"
+                )
+                _ = application.forceTerminate()
+            }
+
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            self?.store.start()
+        }
     }
 
     private func applyPanelPosition(_ position: PanelPosition) {

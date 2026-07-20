@@ -6,8 +6,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 PROCESS_PATTERN='CodeXMicro\+\+'
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="2.5.0"
-BUILD_NUMBER="250"
+VERSION="2.6.0"
+BUILD_NUMBER="260"
 MIN_SYSTEM_VERSION="14.0"
 SIGNING_NAME="CodexMicro Local Development"
 SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -34,6 +34,13 @@ pkill -x "$PROCESS_PATTERN" >/dev/null 2>&1 || true
 pkill -x 'CodexMicro\+\+' >/dev/null 2>&1 || true
 pkill -x "$BUILD_PRODUCT" >/dev/null 2>&1 || true
 pkill -x CodexMicro >/dev/null 2>&1 || true
+for _ in {1..20}; do
+  if ! pgrep -x "$PROCESS_PATTERN" >/dev/null 2>&1 \
+      && ! pgrep -x "$BUILD_PRODUCT" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
 
 cd "$ROOT_DIR"
 if swift build; then
@@ -129,8 +136,12 @@ PLIST
   "$APP_BUNDLE" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 
+LAUNCHED_PID=""
 open_app() {
-  /usr/bin/open -n "$APP_BUNDLE"
+  # Launch the bundle executable directly. LaunchServices may otherwise reopen
+  # an older /Applications copy that has the same bundle identifier.
+  "$APP_BINARY" >/dev/null 2>&1 &
+  LAUNCHED_PID="$!"
 }
 
 case "$MODE" in
@@ -151,7 +162,15 @@ case "$MODE" in
   --verify|verify)
     open_app
     sleep 2
-    pgrep -x "$PROCESS_PATTERN" >/dev/null
+    if [[ -z "$LAUNCHED_PID" ]] || ! kill -0 "$LAUNCHED_PID" >/dev/null 2>&1; then
+      echo "$APP_NAME failed to stay running from $APP_BUNDLE" >&2
+      exit 1
+    fi
+    BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
+    if [[ "$BUILT_VERSION" != "$VERSION" ]]; then
+      echo "Expected version $VERSION, found $BUILT_VERSION" >&2
+      exit 1
+    fi
     echo "$APP_NAME is running from $APP_BUNDLE"
     ;;
   *)

@@ -26,14 +26,14 @@ struct ShortcutSettingsView: View {
                 }
             }
 
-            Section("物理按键映射状态") {
+            Section("按键映射监听状态") {
                 HStack(alignment: .center, spacing: 12) {
                     Label(listeningStatusTitle, systemImage: listeningStatusIcon)
                         .foregroundStyle(listeningStatusColor)
                     Spacer()
-                    if store.hasDirectKeyBindings && !store.automation.isAccessibilityTrusted {
+                    if store.hasKeyBindings && !store.automation.isAccessibilityTrusted {
                         Button("开启辅助功能权限") { store.requestAccessibility() }
-                    } else if store.hasDirectKeyBindings && !store.isDirectKeyMonitoringActive {
+                    } else if store.hasKeyBindings && !store.isKeyMonitoringActive {
                         Button("重新启动监听") { store.retryShortcutMonitoring() }
                     }
                 }
@@ -53,9 +53,9 @@ struct ShortcutSettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("带修饰键 · 独占组合快捷键", systemImage: "command")
+                    Label("带修饰键 · 一级组合映射", systemImage: "command")
                         .font(.headline)
-                    Text("按住 ⌃⌥⇧⌘ 后再按其他键，会录入独占组合快捷键。若组合已被其他程序独占，则拒绝新设置并保留原绑定。若只想映射 Shift 本身，请单独轻点再松开 Shift。")
+                    Text("按住 ⌃⌥⇧⌘ 后再按其他键，会录入组合按键映射。组合键与单键使用同一个底层监听，不再申请系统独占热键，因此不会因其他程序注册过快捷键而失效。若只想映射 Shift 本身，请单独轻点再松开 Shift。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -71,22 +71,22 @@ struct ShortcutSettingsView: View {
     }
 
     private var listeningStatusTitle: String {
-        guard store.hasDirectKeyBindings else { return "尚未配置物理按键映射" }
-        guard store.automation.isAccessibilityTrusted else { return "物理按键映射等待授权" }
-        if !store.isDirectKeyMonitoringActive { return "物理按键映射未启动" }
-        return "物理按键映射已就绪"
+        guard store.hasKeyBindings else { return "尚未配置按键映射" }
+        guard store.automation.isAccessibilityTrusted else { return "按键映射等待授权" }
+        if !store.isKeyMonitoringActive { return "按键映射监听未启动" }
+        return "单键与组合键监听已就绪"
     }
 
     private var listeningStatusIcon: String {
-        guard store.hasDirectKeyBindings else { return "pause.circle" }
+        guard store.hasKeyBindings else { return "pause.circle" }
         guard store.automation.isAccessibilityTrusted else { return "exclamationmark.shield.fill" }
-        return store.isDirectKeyMonitoringActive ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
+        return store.isKeyMonitoringActive ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
     }
 
     private var listeningStatusColor: Color {
-        guard store.hasDirectKeyBindings else { return .secondary }
+        guard store.hasKeyBindings else { return .secondary }
         guard store.automation.isAccessibilityTrusted else { return .orange }
-        return store.isDirectKeyMonitoringActive ? .green : .red
+        return store.isKeyMonitoringActive ? .green : .red
     }
 }
 

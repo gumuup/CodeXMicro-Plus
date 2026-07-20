@@ -1,4 +1,4 @@
-CodeXMicro++ 2.5.0 安装说明 / Installation Guide
+CodeXMicro++ 2.6.0 安装说明 / Installation Guide
 ================================================
 
 系统要求 / Requirements
@@ -12,9 +12,10 @@ CodeXMicro++ 2.5.0 安装说明 / Installation Guide
 3. 按提示进入“系统设置 → 隐私与安全性 → 辅助功能”，允许 CodeXMicro++。
 4. 重新打开 CodeXMicro++。
 
-辅助功能权限用于接管你在“自定义按键”中主动映射的 Home、字母或
-左右 Shift 等物理按键，并向本机 Codex 发送操作。键盘事件仅在内存中与
-绑定比较，未命中内容不会保存或上传。
+辅助功能权限用于接管你在“自定义按键”中主动映射的 Home、字母、
+左右 Shift 等单键或带修饰键的组合，并向本机 Codex 发送操作。所有映射
+使用同一个底层监听器，不申请系统独占热键。键盘事件仅在内存中与绑定
+比较，未命中内容不会保存或上传。
 
 1. Drag CodeXMicro++.app onto “应用程序 Applications”.
 2. On first launch, Control-click CodeXMicro++ in Applications and choose Open.

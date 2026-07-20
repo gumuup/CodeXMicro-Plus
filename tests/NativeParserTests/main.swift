@@ -118,6 +118,12 @@ precondition(ShortcutTarget.agent(at: 5) == .agent6)
 precondition(ShortcutTarget.agent(at: 6) == nil)
 precondition(ShortcutTarget.allCases.count == 19)
 precondition(ShortcutDefaults.bindings.count == ShortcutTarget.allCases.count)
+precondition(CodexKeybindingResolver.parse("Ctrl+F")?.displayName == "⌃F")
+precondition(CodexKeybindingResolver.parse("Ctrl+Shift+D")?.displayName == "⌃⇧D")
+precondition(CodexKeybindingResolver.parse("Ctrl+=")?.keyCode == 24)
+precondition(CodexKeybindingResolver.parse("Ctrl+-")?.keyCode == 27)
+precondition(CodexKeybindingResolver.parse("Cmd+Shift+Left")?.displayName == "⇧⌘←")
+precondition(CodexKeybindingResolver.parse("Ctrl+Unknown") == nil)
 precondition(Set(ShortcutDefaults.bindings.values).count == ShortcutDefaults.bindings.count)
 precondition(ShortcutDefaults.bindings[.fast]?.displayName == "⌃F")
 precondition(ShortcutDefaults.bindings[.approve]?.displayName == "⌃[")
@@ -134,6 +140,15 @@ precondition(ShortcutDefaults.bindings[.joystickLeft]?.displayName == "⌃A")
 precondition(ShortcutDefaults.bindings[.joystickRight]?.displayName == "⌃D")
 precondition((1...6).map { ShortcutDefaults.bindings[ShortcutTarget.agent(at: $0 - 1)!]?.displayName } == (1...6).map { "⌃\($0)" })
 
+let navigationTaskIDs = ["task-1", "task-2", "task-3"]
+precondition(CodexTaskNavigator.targetIndex(taskIDs: navigationTaskIDs, currentTaskID: nil, direction: .right) == 1)
+precondition(CodexTaskNavigator.targetIndex(taskIDs: navigationTaskIDs, currentTaskID: nil, direction: .left) == 2)
+precondition(CodexTaskNavigator.targetIndex(taskIDs: navigationTaskIDs, currentTaskID: "task-2", direction: .right) == 2)
+precondition(CodexTaskNavigator.targetIndex(taskIDs: navigationTaskIDs, currentTaskID: "task-1", direction: .left) == 2)
+precondition(CodexTaskNavigator.targetIndex(taskIDs: navigationTaskIDs, currentTaskID: "missing", direction: .right) == 1)
+precondition(CodexTaskNavigator.targetIndex(taskIDs: [], currentTaskID: nil, direction: .left) == nil)
+precondition(CodexTaskNavigator.targetIndex(taskIDs: navigationTaskIDs, currentTaskID: nil, direction: .up) == nil)
+
 let customFastShortcut = KeyboardShortcutBinding(keyCode: 3, modifiers: [.command], keyLabel: "F")
 let migratedShortcutBindings = ShortcutDefaults.merging(into: [.fast: customFastShortcut])
 precondition(migratedShortcutBindings[.fast] == customFastShortcut)
@@ -143,6 +158,7 @@ let homeShortcut = KeyboardShortcutBinding(keyCode: 115, modifiers: [], keyLabel
 precondition(homeShortcut.displayName == "Home")
 precondition(homeShortcut.activationMode == .directKey)
 precondition(homeShortcut.activationMode.label == "物理按键映射 · 一级")
+precondition(fastShortcut.activationMode.label == "组合按键映射 · 一级监听")
 precondition(ShortcutKeyCatalog.label(for: 115) == "Home")
 precondition(ShortcutKeyCatalog.label(for: 82) == "Num 0")
 precondition(ShortcutKeyCatalog.label(for: 0) == "A")
@@ -216,6 +232,59 @@ precondition(directKeyMatcher.handle(
     isSynthetic: false,
     targetsByKeyCode: directTargets
 ) == .passThrough)
+
+var combinationMatcher = CombinationKeyEventMatcher()
+let controlF = ShortcutGesture(keyCode: 3, modifiers: .control)
+let combinationTargets: [ShortcutGesture: ShortcutTarget] = [controlF: .fast]
+precondition(combinationMatcher.handle(
+    keyCode: 3,
+    modifiers: .control,
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByGesture: combinationTargets
+) == .trigger(.fast))
+precondition(combinationMatcher.handle(
+    keyCode: 3,
+    modifiers: .control,
+    phase: .down,
+    isRepeat: true,
+    isSynthetic: false,
+    targetsByGesture: combinationTargets
+) == .suppress)
+precondition(combinationMatcher.handle(
+    keyCode: 3,
+    modifiers: [],
+    phase: .up,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByGesture: combinationTargets
+) == .release(.fast))
+precondition(combinationMatcher.handle(
+    keyCode: 3,
+    modifiers: .shift,
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByGesture: combinationTargets
+) == .passThrough)
+precondition(combinationMatcher.handle(
+    keyCode: 3,
+    modifiers: .control,
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: true,
+    targetsByGesture: combinationTargets
+) == .passThrough)
+precondition(combinationMatcher.handle(
+    keyCode: 3,
+    modifiers: .control,
+    phase: .down,
+    isRepeat: false,
+    isSynthetic: false,
+    targetsByGesture: combinationTargets
+) == .trigger(.fast))
+precondition(combinationMatcher.drainTargets() == [.fast])
 let modifierTargets: [UInt16: ShortcutTarget] = [56: .voice]
 precondition(directKeyMatcher.handle(
     keyCode: 56,

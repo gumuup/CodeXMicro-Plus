@@ -42,3 +42,22 @@ struct CodexTask: Identifiable, Equatable, Sendable {
         return cleaned.isEmpty ? "未命名任务" : cleaned
     }
 }
+
+enum CodexTaskNavigator {
+    static func targetIndex(
+        taskIDs: [String],
+        currentTaskID: String?,
+        direction: JoystickDirection
+    ) -> Int? {
+        guard !taskIDs.isEmpty else { return nil }
+        let currentIndex = currentTaskID.flatMap(taskIDs.firstIndex(of:)) ?? 0
+        switch direction {
+        case .left:
+            return (currentIndex - 1 + taskIDs.count) % taskIDs.count
+        case .right:
+            return (currentIndex + 1) % taskIDs.count
+        case .up, .down:
+            return nil
+        }
+    }
+}
