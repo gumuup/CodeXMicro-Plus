@@ -16,7 +16,7 @@ final class CodexStore: ObservableObject {
     @Published var isVoicePressed = false
     @Published private(set) var shortcutBindings: [ShortcutTarget: KeyboardShortcutBinding]
     @Published private(set) var shortcutRecordingTarget: ShortcutTarget?
-    @Published private(set) var isDirectKeyMonitoringActive = false
+    @Published private(set) var isKeyMonitoringActive = false
     @Published private(set) var shortcutRegistrationFailures: [ShortcutTarget: ShortcutService.RegistrationFailure] = [:]
 
     @Published var hapticStrength: HapticStrength {
@@ -68,6 +68,7 @@ final class CodexStore: ObservableObject {
     private let automationQueue = SerialAsyncQueue<AutomationRequest>()
     private var isVoiceAutomationActive = false
     private var activeVoiceInputs: Set<VoiceInputSource> = []
+    private var navigationTaskID: String?
     private var seen: [String: Int64]
     private var pendingReasoningLevel: ReasoningLevel?
     private var pendingReasoningDeadline = Date.distantPast
@@ -192,6 +193,14 @@ final class CodexStore: ObservableObject {
         endVoice(from: .panel)
     }
 
+    func toggleVoice() {
+        if activeVoiceInputs.contains(.panel) {
+            endVoice(from: .panel)
+        } else {
+            beginVoice(from: .panel)
+        }
+    }
+
     private func beginVoice(from source: VoiceInputSource) {
         guard activeVoiceInputs.insert(source).inserted else { return }
         guard activeVoiceInputs.count == 1 else { return }
@@ -209,7 +218,24 @@ final class CodexStore: ObservableObject {
     }
 
     func performJoystick(_ direction: JoystickDirection) {
+        if direction == .left || direction == .right {
+            navigateTask(direction)
+            return
+        }
         enqueueAutomation(.joystick(direction))
+    }
+
+    private func navigateTask(_ direction: JoystickDirection) {
+        guard let index = CodexTaskNavigator.targetIndex(
+            taskIDs: tasks.map(\.id),
+            currentTaskID: navigationTaskID,
+            direction: direction
+        ), let task = task(at: index) else {
+            showFeedback("暂无可切换的任务")
+            return
+        }
+        tactilePress()
+        enqueueAutomation(.openTask(task, index: index))
     }
 
     func joystickDetent() {
@@ -275,19 +301,17 @@ final class CodexStore: ObservableObject {
         shortcutBindings[target]
     }
 
-    var hasDirectKeyBindings: Bool {
-        shortcutBindings.values.contains { $0.activationMode == .directKey }
+    var hasKeyBindings: Bool {
+        !shortcutBindings.isEmpty
     }
 
     func shortcutRegistrationIssue(for target: ShortcutTarget) -> String? {
-        guard let failure = shortcutRegistrationFailures[target], let binding = shortcutBindings[target] else {
+        guard let failure = shortcutRegistrationFailures[target] else {
             return nil
         }
         return switch failure {
         case .duplicateBinding:
             "与另一个功能重复"
-        case .hotKeyConflict:
-            "\(binding.displayName) 已被独占，当前未生效"
         case .shadowedByPhysicalMapping:
             "被一级物理按键映射覆盖"
         case .accessibilityRequired:
@@ -425,7 +449,7 @@ final class CodexStore: ObservableObject {
     private func updateShortcutRegistrations() -> [ShortcutTarget: ShortcutService.RegistrationFailure] {
         let failures = shortcutService.update(bindings: shortcutBindings)
         shortcutRegistrationFailures = failures
-        isDirectKeyMonitoringActive = shortcutService.isDirectKeyMonitoringActive
+        isKeyMonitoringActive = shortcutService.isKeyMonitoringActive
         lastKnownAccessibilityTrust = automation.isAccessibilityTrusted
         return failures
     }
@@ -433,7 +457,7 @@ final class CodexStore: ObservableObject {
     private func refreshDirectKeyMonitoringForPermissionChange() {
         let isTrusted = automation.isAccessibilityTrusted
         guard isTrusted != lastKnownAccessibilityTrust else {
-            isDirectKeyMonitoringActive = shortcutService.isDirectKeyMonitoringActive
+            isKeyMonitoringActive = shortcutService.isKeyMonitoringActive
             return
         }
         lastKnownAccessibilityTrust = isTrusted
@@ -447,8 +471,6 @@ final class CodexStore: ObservableObject {
         switch failure {
         case .duplicateBinding:
             "\(binding.displayName) 已绑定到其他功能，请先改绑或清除"
-        case .hotKeyConflict:
-            "\(binding.displayName) 与系统或其他快捷键冲突，已保留原设置"
         case .shadowedByPhysicalMapping:
             "\(binding.displayName) 被一级物理按键映射接管，已保留原设置"
         case .accessibilityRequired:
@@ -514,6 +536,7 @@ final class CodexStore: ObservableObject {
 
             case let .openTask(task, index):
                 try automation.openTask(id: task.id)
+                navigationTaskID = task.id
                 seen[task.id] = max(task.updatedAt, Int64(Date().timeIntervalSince1970 * 1_000))
                 UserDefaults.standard.set(seen, forKey: Keys.seen)
                 showFeedback("已打开任务 \(index + 1)")

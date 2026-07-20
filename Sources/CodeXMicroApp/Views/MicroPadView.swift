@@ -90,8 +90,7 @@ private struct MicroPadSurface: View {
                     VoiceKeyView(
                         isActive: store.isVoicePressed,
                         labelsVisible: store.labelsVisible,
-                        onPress: store.beginVoice,
-                        onRelease: store.endVoice
+                        onToggle: store.toggleVoice
                     )
                     .frame(width: keySize * 2 + spacing, height: keySize)
                     .shortcutConfigurable(.voice, store: store)
@@ -337,7 +336,7 @@ private struct MicroPadSurface: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.5.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.6.0"
     }
 
     private var screwHeads: some View {

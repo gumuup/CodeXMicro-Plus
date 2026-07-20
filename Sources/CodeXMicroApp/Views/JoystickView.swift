@@ -45,7 +45,21 @@ struct JoystickView: View {
                 }
                 .shadow(color: .black.opacity(0.28), radius: scaled(5), y: scaled(5))
                 .offset(constrainedOffset)
+
+            // Dedicated hit regions keep a simple click independent from the
+            // drag gesture's threshold and from the visual knob's small bounds.
+            VStack(spacing: 0) {
+                directionButton(.up)
+                Spacer(minLength: 0)
+                directionButton(.down)
+            }
+            HStack(spacing: 0) {
+                directionButton(.left)
+                Spacer(minLength: 0)
+                directionButton(.right)
+            }
         }
+        .frame(width: scaled(76), height: scaled(76))
         .contentShape(RoundedRectangle(cornerRadius: scaled(17)))
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -60,12 +74,28 @@ struct JoystickView: View {
                 }
                 .onEnded { value in
                     activeDirection = nil
-                    guard let direction = direction(for: value.translation) else { return }
+                    guard let direction = direction(
+                        for: value.translation,
+                        tapLocation: value.location
+                    ) else { return }
                     onTrigger(direction)
                 }
         )
-        .help("摇动：左上一个任务、右下一个任务、上计划模式、下目标模式")
+        .help("点击方向或摇动：左上一个任务、右下一个任务、上计划模式、下目标模式")
         .accessibilityLabel("任务导航摇杆")
+    }
+
+    private func directionButton(_ direction: JoystickDirection) -> some View {
+        Button {
+            onDetent()
+            onTrigger(direction)
+        } label: {
+            Color.clear
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(width: scaled(24), height: scaled(24))
+        .accessibilityLabel(direction.title)
     }
 
     private var markers: [(symbol: String, offset: CGSize)] {
@@ -83,6 +113,24 @@ struct JoystickView: View {
             return translation.width > 0 ? .right : .left
         }
         return translation.height > 0 ? .down : .up
+    }
+
+    private func direction(
+        for translation: CGSize,
+        tapLocation: CGPoint
+    ) -> JoystickDirection? {
+        if let dragDirection = direction(for: translation) { return dragDirection }
+
+        let center = CGPoint(x: scaled(38), y: scaled(38))
+        let offset = CGSize(
+            width: tapLocation.x - center.x,
+            height: tapLocation.y - center.y
+        )
+        guard hypot(offset.width, offset.height) > scaled(8) else { return nil }
+        if abs(offset.width) > abs(offset.height) {
+            return offset.width > 0 ? .right : .left
+        }
+        return offset.height > 0 ? .down : .up
     }
 
     private func scaled(_ value: CGFloat) -> CGFloat { value * layoutScale }

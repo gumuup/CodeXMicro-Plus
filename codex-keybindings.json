@@ -1,9 +1,9 @@
 [
-  {"command":"composer.toggleFastMode","key":"Ctrl+Shift+F"},
-  {"command":"composer.togglePlanMode","key":"Ctrl+Shift+P"},
+  {"command":"composer.toggleFastMode","key":"Ctrl+F"},
+  {"command":"composer.togglePlanMode","key":"Ctrl+S"},
   {"command":"composer.startDictation","key":"Ctrl+Shift+D"},
-  {"command":"composer.increaseReasoningEffort","key":"Ctrl+Shift+I"},
-  {"command":"composer.decreaseReasoningEffort","key":"Ctrl+Shift+U"},
+  {"command":"composer.increaseReasoningEffort","key":"Ctrl+="},
+  {"command":"composer.decreaseReasoningEffort","key":"Ctrl+-"},
   {"command":"composer.cycleReasoningEffort","key":"Ctrl+Shift+R"},
   {"command":"forkThread","key":"Ctrl+Shift+N"}
 ]

@@ -44,7 +44,7 @@ enum ShortcutActivationMode: String, Sendable {
     var label: String {
         switch self {
         case .directKey: "物理按键映射 · 一级"
-        case .registeredHotKey: "组合快捷键 · 独占"
+        case .registeredHotKey: "组合按键映射 · 一级监听"
         }
     }
 }
@@ -67,6 +67,19 @@ enum ShortcutKeyCatalog {
         PhysicalModifierKey(keyCode: keyCode)?.label
             ?? dedicatedKeyLabels[keyCode]
             ?? commonKeyLabels[keyCode]
+    }
+
+    static func keyCode(for label: String) -> UInt16? {
+        let normalized = label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let aliases: [String: UInt16] = [
+            "return": 36, "enter": 36, "tab": 48, "space": 49,
+            "backspace": 51, "delete": 51, "escape": 53, "esc": 53,
+            "left": 123, "right": 124, "down": 125, "up": 126
+        ]
+        if let alias = aliases[normalized] { return alias }
+
+        let labels = dedicatedKeyLabels.merging(commonKeyLabels) { current, _ in current }
+        return labels.first(where: { $0.value.lowercased() == normalized })?.key
     }
 
     private static let commonKeyLabels: [UInt16: String] = [
@@ -240,6 +253,45 @@ struct DirectKeyEventMatcher: Sendable {
             key.didTrigger ? key.target : nil
         })
         suppressedKeysByKeyCode.removeAll()
+        return targets
+    }
+}
+
+struct CombinationKeyEventMatcher: Sendable {
+    private var pressedTargetsByKeyCode: [UInt16: ShortcutTarget] = [:]
+
+    mutating func handle(
+        keyCode: UInt16,
+        modifiers: ShortcutModifiers,
+        phase: ShortcutKeyPhase,
+        isRepeat: Bool,
+        isSynthetic: Bool,
+        targetsByGesture: [ShortcutGesture: ShortcutTarget]
+    ) -> DirectKeyEventOutcome {
+        guard !isSynthetic else { return .passThrough }
+
+        switch phase {
+        case .up:
+            guard let target = pressedTargetsByKeyCode.removeValue(forKey: keyCode) else {
+                return .passThrough
+            }
+            return .release(target)
+        case .down:
+            if pressedTargetsByKeyCode[keyCode] != nil { return .suppress }
+            guard !modifiers.isEmpty,
+                  let target = targetsByGesture[
+                    ShortcutGesture(keyCode: keyCode, modifiers: modifiers)
+                  ] else {
+                return .passThrough
+            }
+            pressedTargetsByKeyCode[keyCode] = target
+            return isRepeat ? .suppress : .trigger(target)
+        }
+    }
+
+    mutating func drainTargets() -> Set<ShortcutTarget> {
+        let targets = Set(pressedTargetsByKeyCode.values)
+        pressedTargetsByKeyCode.removeAll()
         return targets
     }
 }
