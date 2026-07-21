@@ -3,6 +3,10 @@ import Foundation
 struct ShortcutModifiers: OptionSet, Codable, Hashable, Sendable {
     let rawValue: UInt
 
+    init(rawValue: UInt) {
+        self.rawValue = rawValue
+    }
+
     static let command = ShortcutModifiers(rawValue: 1 << 0)
     static let control = ShortcutModifiers(rawValue: 1 << 1)
     static let option = ShortcutModifiers(rawValue: 1 << 2)
@@ -16,35 +20,163 @@ struct ShortcutModifiers: OptionSet, Codable, Hashable, Sendable {
         if contains(.command) { result += "⌘" }
         return result
     }
+
+    init(eventFlagsRawValue: UInt64) {
+        var value: ShortcutModifiers = []
+        if eventFlagsRawValue & (1 << 20) != 0 { value.insert(.command) }
+        if eventFlagsRawValue & (1 << 18) != 0 { value.insert(.control) }
+        if eventFlagsRawValue & (1 << 19) != 0 { value.insert(.option) }
+        if eventFlagsRawValue & (1 << 17) != 0 { value.insert(.shift) }
+        self = value
+    }
 }
 
 struct KeyboardShortcutBinding: Codable, Hashable, Sendable {
     let keyCode: UInt16
     let modifiers: ShortcutModifiers
     let keyLabel: String
+    let mouseButton: UInt32?
+    let hidButton: HIDButtonIdentifier?
+
+    init(
+        keyCode: UInt16,
+        modifiers: ShortcutModifiers,
+        keyLabel: String,
+        mouseButton: UInt32? = nil,
+        hidButton: HIDButtonIdentifier? = nil
+    ) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+        self.keyLabel = keyLabel
+        self.mouseButton = mouseButton
+        self.hidButton = hidButton
+    }
+
+    static func mouse(button: UInt32, modifiers: ShortcutModifiers) -> KeyboardShortcutBinding {
+        KeyboardShortcutBinding(
+            keyCode: 0,
+            modifiers: modifiers,
+            keyLabel: MouseButtonCatalog.label(for: button),
+            mouseButton: button
+        )
+    }
+
+    static func hidButton(
+        _ button: HIDButtonIdentifier,
+        modifiers: ShortcutModifiers
+    ) -> KeyboardShortcutBinding {
+        KeyboardShortcutBinding(
+            keyCode: 0,
+            modifiers: modifiers,
+            keyLabel: button.displayName,
+            hidButton: button
+        )
+    }
 
     var displayName: String { modifiers.glyphs + keyLabel }
+    var isMouse: Bool { mouseButton != nil || hidButton != nil }
+    var isHIDButton: Bool { hidButton != nil }
+    var isUnsafeUnmodifiedPrimaryMouseButton: Bool {
+        guard modifiers.isEmpty else { return false }
+        if mouseButton == 0 || mouseButton == 1 { return true }
+        return hidButton?.usage == 1 || hidButton?.usage == 2
+    }
     var activationMode: ShortcutActivationMode {
-        modifiers.isEmpty ? .directKey : .registeredHotKey
+        if isHIDButton { return .hidButton }
+        if isMouse { return .mouseButton }
+        return modifiers.isEmpty ? .directKey : .registeredHotKey
     }
     var gesture: ShortcutGesture {
-        ShortcutGesture(keyCode: keyCode, modifiers: modifiers)
+        if let hidButton {
+            return ShortcutGesture(hidButton: hidButton, modifiers: modifiers)
+        }
+        if let mouseButton {
+            return ShortcutGesture(mouseButton: mouseButton, modifiers: modifiers)
+        }
+        return ShortcutGesture(keyCode: keyCode, modifiers: modifiers)
     }
 }
 
 struct ShortcutGesture: Hashable, Sendable {
     let keyCode: UInt16
     let modifiers: ShortcutModifiers
+    let mouseButton: UInt32?
+    let hidButton: HIDButtonIdentifier?
+
+    init(keyCode: UInt16, modifiers: ShortcutModifiers) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+        self.mouseButton = nil
+        self.hidButton = nil
+    }
+
+    init(mouseButton: UInt32, modifiers: ShortcutModifiers) {
+        self.keyCode = 0
+        self.modifiers = modifiers
+        self.mouseButton = mouseButton
+        self.hidButton = nil
+    }
+
+    init(hidButton: HIDButtonIdentifier, modifiers: ShortcutModifiers) {
+        self.keyCode = 0
+        self.modifiers = modifiers
+        self.mouseButton = nil
+        self.hidButton = hidButton
+    }
+}
+
+struct HIDButtonIdentifier: Codable, Sendable {
+    let vendorID: Int
+    let productID: Int
+    let usage: UInt32
+    let deviceName: String
+
+    var displayName: String {
+        let trimmedName = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = trimmedName.isEmpty ? "外接设备" : trimmedName
+        return "\(prefix) · 宏键 \(usage)"
+    }
+}
+
+extension HIDButtonIdentifier: Hashable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.vendorID == rhs.vendorID
+            && lhs.productID == rhs.productID
+            && lhs.usage == rhs.usage
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(vendorID)
+        hasher.combine(productID)
+        hasher.combine(usage)
+    }
 }
 
 enum ShortcutActivationMode: String, Sendable {
     case directKey
     case registeredHotKey
+    case mouseButton
+    case hidButton
 
     var label: String {
         switch self {
         case .directKey: "物理按键映射 · 一级"
         case .registeredHotKey: "组合按键映射 · 一级监听"
+        case .mouseButton: "鼠标按键映射 · 一级"
+        case .hidButton: "原始 HID 宏键 · 一级监听"
+        }
+    }
+}
+
+enum MouseButtonCatalog {
+    static func label(for button: UInt32) -> String {
+        switch button {
+        case 0: "鼠标左键"
+        case 1: "鼠标右键"
+        case 2: "鼠标中键"
+        case 3: "鼠标侧键 1"
+        case 4: "鼠标侧键 2"
+        default: "鼠标按键 \(button + 1)"
         }
     }
 }
@@ -53,6 +185,7 @@ enum SystemShortcutRegistry {
     private static let relevantModifierMask: UInt = (1 << 17) | (1 << 18) | (1 << 19) | (1 << 20)
 
     static func contains(_ binding: KeyboardShortcutBinding) -> Bool {
+        guard !binding.isMouse else { return false }
         guard let domain = UserDefaults.standard.persistentDomain(forName: "com.apple.symbolichotkeys"),
               let entries = domain["AppleSymbolicHotKeys"] as? [String: Any] else {
             return false
@@ -61,6 +194,7 @@ enum SystemShortcutRegistry {
     }
 
     static func contains(_ binding: KeyboardShortcutBinding, in entries: [String: Any]) -> Bool {
+        guard !binding.isMouse else { return false }
         let expectedModifiers = modifierFlags(for: binding.modifiers)
         return entries.values.contains { rawEntry in
             guard let entry = rawEntry as? [String: Any],
@@ -329,6 +463,77 @@ struct CombinationKeyEventMatcher: Sendable {
     mutating func drainTargets() -> Set<ShortcutTarget> {
         let targets = Set(pressedTargetsByKeyCode.values)
         pressedTargetsByKeyCode.removeAll()
+        return targets
+    }
+}
+
+struct MouseButtonEventMatcher: Sendable {
+    private var pressedTargetsByButton: [UInt32: ShortcutTarget] = [:]
+
+    mutating func handle(
+        button: UInt32,
+        modifiers: ShortcutModifiers,
+        phase: ShortcutKeyPhase,
+        isSynthetic: Bool,
+        targetsByGesture: [ShortcutGesture: ShortcutTarget]
+    ) -> DirectKeyEventOutcome {
+        guard !isSynthetic else { return .passThrough }
+
+        switch phase {
+        case .up:
+            guard let target = pressedTargetsByButton.removeValue(forKey: button) else {
+                return .passThrough
+            }
+            return .release(target)
+        case .down:
+            if pressedTargetsByButton[button] != nil { return .suppress }
+            guard let target = targetsByGesture[
+                ShortcutGesture(mouseButton: button, modifiers: modifiers)
+            ] else {
+                return .passThrough
+            }
+            pressedTargetsByButton[button] = target
+            return .trigger(target)
+        }
+    }
+
+    mutating func drainTargets() -> Set<ShortcutTarget> {
+        let targets = Set(pressedTargetsByButton.values)
+        pressedTargetsByButton.removeAll()
+        return targets
+    }
+}
+
+struct HIDButtonEventMatcher: Sendable {
+    private var pressedTargetsByButton: [HIDButtonIdentifier: ShortcutTarget] = [:]
+
+    mutating func handle(
+        button: HIDButtonIdentifier,
+        modifiers: ShortcutModifiers,
+        phase: ShortcutKeyPhase,
+        targetsByGesture: [ShortcutGesture: ShortcutTarget]
+    ) -> DirectKeyEventOutcome {
+        switch phase {
+        case .up:
+            guard let target = pressedTargetsByButton.removeValue(forKey: button) else {
+                return .passThrough
+            }
+            return .release(target)
+        case .down:
+            if pressedTargetsByButton[button] != nil { return .suppress }
+            guard let target = targetsByGesture[
+                ShortcutGesture(hidButton: button, modifiers: modifiers)
+            ] else {
+                return .passThrough
+            }
+            pressedTargetsByButton[button] = target
+            return .trigger(target)
+        }
+    }
+
+    mutating func drainTargets() -> Set<ShortcutTarget> {
+        let targets = Set(pressedTargetsByButton.values)
+        pressedTargetsByButton.removeAll()
         return targets
     }
 }

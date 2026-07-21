@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         category: "application"
     )
 
-    let store = CodexStore()
+    let store: CodexStore
     private var panel: FloatingPanel?
     private var radialMenuController: RadialMenuPanelController?
     private var panelPositionCancellable: AnyCancellable?
@@ -51,12 +51,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var applicationActiveBeforeRecording: NSRunningApplication?
     private var didTakePanelFocusForShortcutRecording = false
 
+    override init() {
+        AppDataManager.shared.prepareForLaunch()
+        store = CodexStore()
+        super.init()
+        AppDataManager.shared.startObservingUserDefaults()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         createPanel()
         radialMenuController = RadialMenuPanelController(store: store)
         store.quickLaunchHandler = { [weak self] in
-            self?.togglePanel()
+            self?.togglePanelAtPointer()
         }
         store.radialMenuHandler = { [weak self] in
             self?.radialMenuController?.hotKeyPressed()
@@ -83,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         startupTask?.cancel()
+        try? AppDataManager.shared.saveCurrentPreferences()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -100,6 +108,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func togglePanel() {
         panel?.isVisible == true ? hidePanel() : showPanel()
+    }
+
+    func togglePanelAtPointer() {
+        guard panel?.isVisible != true else {
+            hidePanel()
+            return
+        }
+        positionPanelAtPointer()
+        showPanel()
     }
 
     func toggleRadialMenu() {
@@ -135,6 +152,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         panel.orderFrontRegardless()
         self.panel = panel
+    }
+
+    private func positionPanelAtPointer() {
+        guard let panel else { return }
+        let pointer = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) })
+            ?? NSScreen.main
+            ?? panel.screen
+        guard let visibleFrame = screen?.visibleFrame else { return }
+        let origin = PointerPanelPlacement.origin(
+            pointer: pointer,
+            panelSize: panel.frame.size,
+            visibleFrame: visibleFrame
+        )
+        panel.setFrameOrigin(origin)
     }
 
     private func startAfterRetiringDuplicateInstances() {

@@ -7,6 +7,8 @@ private enum DirectKeyEventKind: Sendable {
     case down
     case up
     case flagsChanged
+    case mouseDown
+    case mouseUp
     case tapDisabled
     case other
 }
@@ -14,6 +16,7 @@ private enum DirectKeyEventKind: Sendable {
 private struct DirectKeyEventSnapshot: Sendable {
     let kind: DirectKeyEventKind
     let keyCode: UInt16
+    let mouseButton: UInt32?
     let modifiers: ShortcutModifiers
     let eventFlagsRawValue: UInt64
     let keyLabel: String
@@ -33,16 +36,27 @@ private let shortcutDirectKeyEventTapCallback: CGEventTapCallBack = { _, type, e
     case .keyDown: .down
     case .keyUp: .up
     case .flagsChanged: .flagsChanged
+    case .leftMouseDown, .rightMouseDown, .otherMouseDown: .mouseDown
+    case .leftMouseUp, .rightMouseUp, .otherMouseUp: .mouseUp
     case .tapDisabledByTimeout, .tapDisabledByUserInput: .tapDisabled
     default: .other
     }
     let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+    let mouseButton: UInt32? = switch kind {
+    case .mouseDown, .mouseUp:
+        UInt32(truncatingIfNeeded: event.getIntegerValueField(.mouseEventButtonNumber))
+    default:
+        nil
+    }
     let snapshot = DirectKeyEventSnapshot(
         kind: kind,
         keyCode: keyCode,
+        mouseButton: mouseButton,
         modifiers: ShortcutModifiers(event.flags),
         eventFlagsRawValue: event.flags.rawValue,
-        keyLabel: ShortcutKeyCatalog.label(for: keyCode) ?? "Key \(keyCode)",
+        keyLabel: mouseButton.map(MouseButtonCatalog.label(for:))
+            ?? ShortcutKeyCatalog.label(for: keyCode)
+            ?? "宏键 \(keyCode)",
         isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
         isSynthetic: event.getIntegerValueField(.eventSourceUserData) == ShortcutEventMarker.codexAutomation
     )
@@ -118,8 +132,12 @@ final class ShortcutService {
     private var recordingTarget: ShortcutTarget?
     private var directKeyTargetsByKeyCode: [UInt16: ShortcutTarget] = [:]
     private var combinationTargetsByGesture: [ShortcutGesture: ShortcutTarget] = [:]
+    private var mouseTargetsByGesture: [ShortcutGesture: ShortcutTarget] = [:]
+    private var hidTargetsByGesture: [ShortcutGesture: ShortcutTarget] = [:]
     private var directKeyEventMatcher = DirectKeyEventMatcher()
     private var combinationKeyEventMatcher = CombinationKeyEventMatcher()
+    private var mouseButtonEventMatcher = MouseButtonEventMatcher()
+    private var hidButtonEventMatcher = HIDButtonEventMatcher()
     private var physicalModifierKeyState = PhysicalModifierKeyState()
     private var pendingRecordingModifierKeyCode: UInt16?
     private var registeredHotKeysByID: [UInt32: RegisteredHotKey] = [:]
@@ -128,6 +146,7 @@ final class ShortcutService {
     nonisolated(unsafe) private var localMonitor: Any?
     nonisolated(unsafe) private var directKeyEventTap: CFMachPort?
     nonisolated(unsafe) private var directKeyRunLoopSource: CFRunLoopSource?
+    private var hidObserverToken: UUID?
     private var onTrigger: ((ShortcutTarget) -> Void)?
     private var onRelease: ((ShortcutTarget) -> Void)?
     private var onCapture: ((CaptureEvent) -> Void)?
@@ -145,15 +164,29 @@ final class ShortcutService {
             CGEvent.tapEnable(tap: directKeyEventTap, enable: false)
             CFMachPortInvalidate(directKeyEventTap)
         }
+        let token = hidObserverToken
+        Task { @MainActor in HIDButtonMonitor.shared.removeObserver(token) }
     }
 
     var isKeyMonitoringActive: Bool {
         guard !bindings.isEmpty else { return false }
-        let priorityBindings = bindings.filter { !Self.systemHotKeyTargets.contains($0.key) }
+        let priorityBindings = bindings.filter {
+            !$0.value.isHIDButton
+                && (!Self.systemHotKeyTargets.contains($0.key) || $0.value.isMouse)
+        }
         let priorityMonitoringActive = priorityBindings.isEmpty
             || directKeyEventTap.map { CGEvent.tapIsEnabled(tap: $0) } == true
         let systemHotKeysActive = Self.systemHotKeyTargets.allSatisfy { target in
-            bindings[target] == nil || registeredHotKeysByID.values.contains { $0.target == target }
+            guard let binding = bindings[target] else { return true }
+            if binding.isMouse {
+                if binding.isHIDButton {
+                    return hidTargetsByGesture[binding.gesture] == target
+                        && HIDButtonMonitor.shared.isAvailable
+                }
+                return mouseTargetsByGesture[binding.gesture] == target
+                    && directKeyEventTap.map { CGEvent.tapIsEnabled(tap: $0) } == true
+            }
+            return registeredHotKeysByID.values.contains { $0.target == target }
         }
         return priorityMonitoringActive && systemHotKeysActive
     }
@@ -170,6 +203,12 @@ final class ShortcutService {
             }
             return combinationTargetsByGesture[binding.gesture] == target
                 && directKeyEventTap.map { CGEvent.tapIsEnabled(tap: $0) } == true
+        case .mouseButton:
+            return mouseTargetsByGesture[binding.gesture] == target
+                && directKeyEventTap.map { CGEvent.tapIsEnabled(tap: $0) } == true
+        case .hidButton:
+            return hidTargetsByGesture[binding.gesture] == target
+                && HIDButtonMonitor.shared.isAvailable
         }
     }
 
@@ -181,6 +220,11 @@ final class ShortcutService {
         self.onTrigger = onTrigger
         self.onRelease = onRelease
         self.onCapture = onCapture
+        if hidObserverToken == nil {
+            hidObserverToken = HIDButtonMonitor.shared.addObserver { [weak self] event in
+                self?.handleHIDButtonEvent(event)
+            }
+        }
         guard localMonitor == nil else { return }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
@@ -203,6 +247,40 @@ final class ShortcutService {
         pendingRecordingModifierKeyCode = nil
         recordingTarget = target
         _ = installDirectKeyMonitorIfNeeded()
+    }
+
+    private func handleHIDButtonEvent(_ event: HIDButtonEvent) {
+        let modifiers = ShortcutModifiers(
+            eventFlagsRawValue: CGEventSource.flagsState(.combinedSessionState).rawValue
+        )
+
+        if let target = recordingTarget, event.phase == .down {
+            guard event.identifier.usage > 3 else { return }
+            recordingTarget = nil
+            pendingRecordingModifierKeyCode = nil
+            physicalModifierKeyState.reset()
+            onCapture?(.captured(
+                target,
+                .hidButton(event.identifier, modifiers: modifiers)
+            ))
+            return
+        }
+
+        let outcome = hidButtonEventMatcher.handle(
+            button: event.identifier,
+            modifiers: modifiers,
+            phase: event.phase,
+            targetsByGesture: hidTargetsByGesture
+        )
+        switch outcome {
+        case .passThrough, .suppress:
+            break
+        case let .trigger(target):
+            Self.logger.info("Raw HID macro button triggered \(target.rawValue, privacy: .public)")
+            onTrigger?(target)
+        case let .release(target):
+            onRelease?(target)
+        }
     }
 
     func cancelRecording() {
@@ -284,6 +362,17 @@ final class ShortcutService {
         if let target = recordingTarget {
             guard !event.isSynthetic else { return eventDecision(suppress: false) }
 
+            if event.kind == .mouseDown, let mouseButton = event.mouseButton {
+                recordingTarget = nil
+                pendingRecordingModifierKeyCode = nil
+                physicalModifierKeyState.reset()
+                deliverCaptureAfterEventTap(.captured(
+                    target,
+                    .mouse(button: mouseButton, modifiers: event.modifiers)
+                ))
+                return eventDecision(suppress: true)
+            }
+
             if event.kind == .flagsChanged, let modifierPhase {
                 if modifierPhase == .down {
                     pendingRecordingModifierKeyCode = event.keyCode
@@ -318,6 +407,30 @@ final class ShortcutService {
                 )
             ))
             return eventDecision(suppress: true)
+        }
+
+        if let mouseButton = event.mouseButton {
+            let phase: ShortcutKeyPhase = event.kind == .mouseDown ? .down : .up
+            let outcome = mouseButtonEventMatcher.handle(
+                button: mouseButton,
+                modifiers: event.modifiers,
+                phase: phase,
+                isSynthetic: event.isSynthetic,
+                targetsByGesture: mouseTargetsByGesture
+            )
+            switch outcome {
+            case .passThrough:
+                return eventDecision(suppress: false)
+            case .suppress:
+                return eventDecision(suppress: true)
+            case let .trigger(target):
+                Self.logger.info("Mapped mouse button triggered \(target.rawValue, privacy: .public)")
+                onTrigger?(target)
+                return eventDecision(suppress: true)
+            case let .release(target):
+                onRelease?(target)
+                return eventDecision(suppress: true)
+            }
         }
 
         let phase: ShortcutKeyPhase
@@ -374,10 +487,14 @@ final class ShortcutService {
         unregisterSystemHotKeys()
         directKeyTargetsByKeyCode.removeAll()
         combinationTargetsByGesture.removeAll()
+        mouseTargetsByGesture.removeAll()
+        hidTargetsByGesture.removeAll()
 
         var failures: [ShortcutTarget: RegistrationFailure] = [:]
         let priorityBindings = ShortcutTarget.allCases.compactMap { target -> (ShortcutTarget, KeyboardShortcutBinding)? in
-            guard !Self.systemHotKeyTargets.contains(target), let binding = bindings[target] else { return nil }
+            guard let binding = bindings[target],
+                  !binding.isHIDButton,
+                  (!Self.systemHotKeyTargets.contains(target) || binding.isMouse) else { return nil }
             return (target, binding)
         }
         let directBindings = ShortcutTarget.allCases.compactMap { target -> (ShortcutTarget, KeyboardShortcutBinding)? in
@@ -385,6 +502,23 @@ final class ShortcutService {
                   let binding = bindings[target],
                   binding.activationMode == .directKey else { return nil }
             return (target, binding)
+        }
+        let mouseBindings = ShortcutTarget.allCases.compactMap { target -> (ShortcutTarget, KeyboardShortcutBinding)? in
+            guard let binding = bindings[target], binding.isMouse, !binding.isHIDButton else { return nil }
+            return (target, binding)
+        }
+        let hidBindings = ShortcutTarget.allCases.compactMap { target -> (ShortcutTarget, KeyboardShortcutBinding)? in
+            guard let binding = bindings[target], binding.isHIDButton else { return nil }
+            return (target, binding)
+        }
+
+        for (target, binding) in hidBindings {
+            if hidTargetsByGesture[binding.gesture] == nil {
+                hidTargetsByGesture[binding.gesture] = target
+                Self.logger.info("Monitoring \(target.rawValue, privacy: .public) as raw HID \(binding.displayName, privacy: .public)")
+            } else {
+                failures[target] = .duplicateBinding
+            }
         }
 
         if priorityBindings.isEmpty {
@@ -396,6 +530,14 @@ final class ShortcutService {
                 if directKeyTargetsByKeyCode[binding.keyCode] == nil {
                     directKeyTargetsByKeyCode[binding.keyCode] = target
                     Self.logger.info("Monitoring \(target.rawValue, privacy: .public) directly as \(binding.displayName, privacy: .public)")
+                } else {
+                    failures[target] = .duplicateBinding
+                }
+            }
+            for (target, binding) in mouseBindings {
+                if mouseTargetsByGesture[binding.gesture] == nil {
+                    mouseTargetsByGesture[binding.gesture] = target
+                    Self.logger.info("Monitoring \(target.rawValue, privacy: .public) as \(binding.displayName, privacy: .public)")
                 } else {
                     failures[target] = .duplicateBinding
                 }
@@ -435,6 +577,7 @@ final class ShortcutService {
 
         for (index, target) in Self.systemHotKeyTargets.enumerated() {
             guard let binding = bindings[target] else { continue }
+            if binding.isMouse { continue }
             guard binding.activationMode == .registeredHotKey else {
                 failures[target] = .hotKeyRegistrationUnavailable
                 continue
@@ -539,9 +682,21 @@ final class ShortcutService {
             uninstallDirectKeyMonitor()
         }
 
-        let eventMask = (CGEventMask(1) << CGEventType.keyDown.rawValue)
-            | (CGEventMask(1) << CGEventType.keyUp.rawValue)
-            | (CGEventMask(1) << CGEventType.flagsChanged.rawValue)
+        let monitoredEventTypes: [CGEventType] = [
+            .keyDown,
+            .keyUp,
+            .flagsChanged,
+            .leftMouseDown,
+            .leftMouseUp,
+            .rightMouseDown,
+            .rightMouseUp,
+            .otherMouseDown,
+            .otherMouseUp,
+        ]
+        var eventMask: CGEventMask = 0
+        for eventType in monitoredEventTypes {
+            eventMask |= CGEventMask(1) << eventType.rawValue
+        }
         guard let eventTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -576,12 +731,15 @@ final class ShortcutService {
         directKeyEventTap = nil
         directKeyTargetsByKeyCode.removeAll()
         combinationTargetsByGesture.removeAll()
+        mouseTargetsByGesture.removeAll()
         physicalModifierKeyState.reset()
     }
 
     private func releaseSuppressedKeyEvents() {
         let targets = directKeyEventMatcher.drainTargets()
             .union(combinationKeyEventMatcher.drainTargets())
+            .union(mouseButtonEventMatcher.drainTargets())
+            .union(hidButtonEventMatcher.drainTargets())
         for target in targets {
             onRelease?(target)
         }
@@ -614,7 +772,7 @@ final class ShortcutService {
     private static func keyLabel(for event: NSEvent) -> String {
         if let label = ShortcutKeyCatalog.label(for: event.keyCode) { return label }
         let value = event.charactersIgnoringModifiers?.trimmingCharacters(in: .controlCharacters) ?? ""
-        return value.isEmpty ? "Key \(event.keyCode)" : value.uppercased()
+        return value.isEmpty ? "宏键 \(event.keyCode)" : value.uppercased()
     }
 }
 

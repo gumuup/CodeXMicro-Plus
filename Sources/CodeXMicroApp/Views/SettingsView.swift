@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
@@ -66,6 +67,10 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("开机自启动") {
+                    LaunchAtLoginSettingsView()
+                }
+
                 Section("系统权限") {
                     HStack {
                         Label(
@@ -78,7 +83,7 @@ struct SettingsView: View {
                             Button("开启辅助功能权限") { store.requestAccessibility() }
                         }
                     }
-                    Text("权限用于接管你主动映射的物理按键，并向本机 Codex 发送操作；不保存或上传其他按键数据。")
+                    Text("权限用于接管你主动映射的物理键盘或鼠标按键，并向本机 Codex 发送操作；不保存或上传其他输入数据。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -95,6 +100,9 @@ struct SettingsView: View {
             ShortcutSettingsView(store: store)
                 .tabItem { Label("自定义按键", systemImage: "keyboard") }
 
+            DataSettingsView()
+                .tabItem { Label("数据", systemImage: "externaldrive.fill") }
+
             VStack(alignment: .leading, spacing: 12) {
                 Label("CodeXMicro++", systemImage: "keyboard")
                     .font(.title2.bold())
@@ -108,6 +116,138 @@ struct SettingsView: View {
         }
         .frame(minWidth: 780, idealWidth: 780, minHeight: 680, idealHeight: 680)
         .background(SettingsWindowConfigurator())
+    }
+}
+
+private struct LaunchAtLoginSettingsView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var status = SMAppService.mainApp.status
+    @State private var errorMessage: String?
+
+    var body: some View {
+        HStack {
+            Label(statusTitle, systemImage: statusIcon)
+                .foregroundStyle(statusColor)
+
+            Spacer()
+
+            Button(buttonTitle, action: performAction)
+        }
+
+        Text(statusDescription)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .onAppear(perform: refreshStatus)
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    refreshStatus()
+                }
+            }
+            .alert(
+                "无法更改开机自启动",
+                isPresented: Binding(
+                    get: { errorMessage != nil },
+                    set: { if !$0 { errorMessage = nil } }
+                )
+            ) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(errorMessage ?? "未知错误")
+            }
+    }
+
+    private var statusTitle: String {
+        switch status {
+        case .enabled:
+            "开机自启动已开启"
+        case .requiresApproval:
+            "开机自启动等待允许"
+        case .notRegistered:
+            "登录时自动启动"
+        case .notFound:
+            "开机自启动暂不可用"
+        @unknown default:
+            "登录时自动启动"
+        }
+    }
+
+    private var statusIcon: String {
+        switch status {
+        case .enabled:
+            "checkmark.circle.fill"
+        case .requiresApproval:
+            "exclamationmark.circle.fill"
+        case .notRegistered, .notFound:
+            "power"
+        @unknown default:
+            "power"
+        }
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .enabled:
+            .green
+        case .requiresApproval:
+            .orange
+        case .notRegistered, .notFound:
+            .primary
+        @unknown default:
+            .primary
+        }
+    }
+
+    private var buttonTitle: String {
+        switch status {
+        case .enabled:
+            "关闭"
+        case .requiresApproval:
+            "前往系统设置"
+        case .notRegistered:
+            "一键开启"
+        case .notFound:
+            "重试"
+        @unknown default:
+            "一键开启"
+        }
+    }
+
+    private var statusDescription: String {
+        switch status {
+        case .enabled:
+            "CodeXMicro++ 已由 macOS 配置为登录时自动启动。"
+        case .requiresApproval:
+            "该登录项曾被停用；受 macOS 安全限制，需要在系统“登录项”设置中重新允许。"
+        case .notRegistered:
+            "点击“一键开启”即可由应用直接完成配置，无需再在系统设置中手动添加。"
+        case .notFound:
+            "当前运行方式无法找到应用登录项，请通过完整的 CodeXMicro++.app 启动后重试。"
+        @unknown default:
+            "点击“一键开启”即可由应用直接完成配置。"
+        }
+    }
+
+    private func performAction() {
+        if status == .requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+            return
+        }
+
+        do {
+            if status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+            refreshStatus()
+        } catch {
+            refreshStatus()
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func refreshStatus() {
+        status = SMAppService.mainApp.status
     }
 }
 

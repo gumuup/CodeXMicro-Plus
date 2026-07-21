@@ -31,6 +31,8 @@ final class RadialItemShortcutService {
     private static let hotKeySignature: OSType = 0x5244_4C49
 
     private var registeredHotKeys: [UInt32: RegisteredHotKey] = [:]
+    private var hidGestures: Set<ShortcutGesture> = []
+    private var hidObserverToken: UUID?
     nonisolated(unsafe) private var eventHandler: EventHandlerRef?
     private var onTrigger: ((ShortcutGesture) -> Void)?
     private var profiles: [RadialMenuProfile] = []
@@ -41,10 +43,17 @@ final class RadialItemShortcutService {
             UnregisterEventHotKey(hotKey.reference)
         }
         if let eventHandler { RemoveEventHandler(eventHandler) }
+        let token = hidObserverToken
+        Task { @MainActor in HIDButtonMonitor.shared.removeObserver(token) }
     }
 
     func start(onTrigger: @escaping (ShortcutGesture) -> Void) {
         self.onTrigger = onTrigger
+        if hidObserverToken == nil {
+            hidObserverToken = HIDButtonMonitor.shared.addObserver { [weak self] event in
+                self?.handleHIDButton(event)
+            }
+        }
         _ = installEventHandlerIfNeeded()
         _ = registerCurrentProfiles()
     }
@@ -71,21 +80,40 @@ final class RadialItemShortcutService {
         onTrigger?(registered.gesture)
     }
 
+    private func handleHIDButton(_ event: HIDButtonEvent) {
+        guard event.phase == .down else { return }
+        let modifiers = ShortcutModifiers(
+            eventFlagsRawValue: CGEventSource.flagsState(.combinedSessionState).rawValue
+        )
+        let gesture = ShortcutGesture(hidButton: event.identifier, modifiers: modifiers)
+        guard hidGestures.contains(gesture) else { return }
+        onTrigger?(gesture)
+    }
+
     private func registerCurrentProfiles() -> Set<UUID> {
         unregisterAll()
         guard installEventHandlerIfNeeded() else {
             return Set(profiles.flatMap(\.items).compactMap { $0.triggerShortcut == nil ? nil : $0.id })
         }
 
+        var failures: Set<UUID> = []
         var itemIDsByGesture: [ShortcutGesture: [UUID]] = [:]
         for profile in profiles {
             for item in profile.items {
-                guard let binding = item.triggerShortcut, !binding.modifiers.isEmpty else { continue }
+                guard let binding = item.triggerShortcut,
+                      binding.isHIDButton || !binding.modifiers.isEmpty else { continue }
+                if binding.isHIDButton {
+                    hidGestures.insert(binding.gesture)
+                    continue
+                }
+                guard !binding.isMouse else {
+                    failures.insert(item.id)
+                    continue
+                }
                 itemIDsByGesture[binding.gesture, default: []].append(item.id)
             }
         }
 
-        var failures: Set<UUID> = []
         for (offset, entry) in itemIDsByGesture.sorted(by: { lhs, rhs in
             if lhs.key.keyCode != rhs.key.keyCode { return lhs.key.keyCode < rhs.key.keyCode }
             return lhs.key.modifiers.rawValue < rhs.key.modifiers.rawValue
@@ -132,6 +160,7 @@ final class RadialItemShortcutService {
             UnregisterEventHotKey(hotKey.reference)
         }
         registeredHotKeys.removeAll()
+        hidGestures.removeAll()
     }
 
     private func carbonFlags(for modifiers: ShortcutModifiers) -> UInt32 {

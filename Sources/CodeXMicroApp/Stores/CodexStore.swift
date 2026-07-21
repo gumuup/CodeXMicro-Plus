@@ -288,7 +288,7 @@ final class CodexStore: ObservableObject {
         guard let index = radialMenuItems.firstIndex(where: { $0.id == item.id }) else { return }
         var updatedItem = item
         if let shortcut = updatedItem.triggerShortcut {
-            guard !shortcut.modifiers.isEmpty else {
+            guard shortcut.isHIDButton || !shortcut.modifiers.isEmpty else {
                 updatedItem.triggerShortcut = nil
                 radialMenuItems[index] = updatedItem
                 saveSelectedRadialMenuItems()
@@ -311,6 +311,33 @@ final class CodexStore: ObservableObject {
         }
         radialMenuItems[index] = updatedItem
         saveSelectedRadialMenuItems()
+    }
+
+    func copyRadialMenuItem(id: UUID) {
+        guard let item = radialMenuItems.first(where: { $0.id == id }) else {
+            showFeedback("请先选择一个轮盘操作")
+            return
+        }
+        do {
+            try RadialMenuClipboard.copy(item)
+            showFeedback("已复制“\(item.title)”")
+        } catch {
+            showFeedback("轮盘操作复制失败")
+        }
+    }
+
+    func pasteRadialMenuItem(to id: UUID) {
+        guard radialMenuItems.contains(where: { $0.id == id }) else {
+            showFeedback("请先选择粘贴位置")
+            return
+        }
+        guard var copiedItem = RadialMenuClipboard.item() else {
+            showFeedback("剪贴板中没有轮盘操作")
+            return
+        }
+        copiedItem.id = id
+        updateRadialMenuItem(copiedItem)
+        showFeedback("已粘贴“\(copiedItem.title)”")
     }
 
     func removeRadialMenuItem(id: UUID) {
@@ -365,10 +392,27 @@ final class CodexStore: ObservableObject {
         radialMenuProfiles.first { $0.id == selectedRadialMenuProfileID }
     }
 
+    var selectedRadialPresetIndex: Int {
+        selectedRadialMenuProfile?.selectedPresetIndex ?? 0
+    }
+
     func selectRadialMenuProfile(id: UUID) {
         guard let profile = radialMenuProfiles.first(where: { $0.id == id }) else { return }
         selectedRadialMenuProfileID = profile.id
         radialMenuItems = profile.items
+    }
+
+    func selectRadialPreset(at index: Int) {
+        guard (0..<RadialMenuProfile.presetCombinationCount).contains(index),
+              let profileIndex = radialMenuProfiles.firstIndex(where: {
+                  $0.id == selectedRadialMenuProfileID
+              }),
+              radialMenuProfiles[profileIndex].selectedPresetIndex != index else { return }
+        radialMenuProfiles[profileIndex].selectPreset(at: index)
+        radialMenuItems = radialMenuProfiles[profileIndex].items
+        saveRadialMenuProfiles()
+        haptics.radialSelectionDetent(strength: hapticStrength)
+        showFeedback("已切换到预设组合 \(index + 1)")
     }
 
     func setRadialMenuGlobalModeEnabled(_ enabled: Bool) {
@@ -722,7 +766,15 @@ final class CodexStore: ObservableObject {
         switch event {
         case let .captured(target, binding):
             shortcutRecordingTimeoutTask?.cancel()
-            guard ![ShortcutTarget.quickLaunch, .radialMenu].contains(target) || !binding.modifiers.isEmpty else {
+            guard !binding.isUnsafeUnmodifiedPrimaryMouseButton else {
+                shortcutRecordingTarget = nil
+                _ = updateShortcutRegistrations()
+                showFeedback("为避免无法正常点击，鼠标左键或右键必须搭配修饰键")
+                return
+            }
+            guard ![ShortcutTarget.quickLaunch, .radialMenu].contains(target)
+                    || !binding.modifiers.isEmpty
+                    || binding.isMouse else {
                 shortcutRecordingTarget = nil
                 _ = updateShortcutRegistrations()
                 showFeedback("系统级启动快捷键请至少包含 Control、Option、Shift 或 Command")
