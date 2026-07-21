@@ -8,6 +8,7 @@ final class CodexAutomationService {
         case codexNotInstalled
         case taskCouldNotOpen
         case codexMenuItemUnavailable(String)
+        case radialActionInvalid(String)
 
         var errorDescription: String? {
             switch self {
@@ -15,6 +16,7 @@ final class CodexAutomationService {
             case .codexNotInstalled: "没有找到 Codex 桌面应用。"
             case .taskCouldNotOpen: "Codex 无法打开这个任务。"
             case let .codexMenuItemUnavailable(action): "Codex 当前无法执行“\(action)”。"
+            case let .radialActionInvalid(action): "轮盘项目“\(action)”尚未配置完整。"
             }
         }
     }
@@ -184,6 +186,64 @@ final class CodexAutomationService {
              .frontendPolish, .gitStatus, .newBranch, .mergeBranch, .reviewPullRequest,
              .commitAndPush:
             break
+        }
+    }
+
+    func perform(_ action: RadialMenuAction) async throws {
+        switch action {
+        case .unconfigured:
+            throw AutomationError.radialActionInvalid("未设置")
+
+        case let .codexToolbox(toolboxAction):
+            try await perform(toolboxAction)
+
+        case let .keyboardShortcut(binding):
+            try requireAccessibility()
+            sendKeyGlobally(
+                CGKeyCode(binding.keyCode),
+                flags: binding.modifiers.cgEventFlags
+            )
+
+        case let .application(path), let .systemApplication(path):
+            guard !path.isEmpty else { throw AutomationError.radialActionInvalid("应用程序") }
+            let url = URL(fileURLWithPath: path)
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+
+        case let .plugin(identifier):
+            guard let plugin = RadialPluginPreset(rawValue: identifier) else {
+                throw AutomationError.radialActionInvalid("插件")
+            }
+            try await perform(plugin.toolboxAction)
+
+        case let .website(value):
+            let normalized = value.contains("://") ? value : "https://\(value)"
+            guard let url = URL(string: normalized), NSWorkspace.shared.open(url) else {
+                throw AutomationError.radialActionInvalid("网址")
+            }
+
+        case let .pasteText(text):
+            guard !text.isEmpty else { throw AutomationError.radialActionInvalid("粘贴文本") }
+            try requireAccessibility()
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            try? await Task.sleep(for: .milliseconds(80))
+            sendKeyGlobally(9, flags: .maskCommand)
+
+        case let .folder(path):
+            guard !path.isEmpty, NSWorkspace.shared.open(URL(fileURLWithPath: path)) else {
+                throw AutomationError.radialActionInvalid("文件夹")
+            }
+
+        case let .shortcut(name):
+            guard !name.isEmpty else { throw AutomationError.radialActionInvalid("快捷指令") }
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")
+            process.arguments = ["run", name]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
         }
     }
 

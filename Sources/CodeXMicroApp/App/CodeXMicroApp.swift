@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let store = CodexStore()
     private var panel: FloatingPanel?
+    private var radialMenuController: RadialMenuPanelController?
     private var panelPositionCancellable: AnyCancellable?
     private var shortcutRecordingCancellable: AnyCancellable?
     private var startupTask: Task<Void, Never>?
@@ -53,8 +54,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         createPanel()
+        radialMenuController = RadialMenuPanelController(store: store)
         store.quickLaunchHandler = { [weak self] in
             self?.togglePanel()
+        }
+        store.radialMenuHandler = { [weak self] in
+            self?.radialMenuController?.hotKeyPressed()
+        }
+        store.radialMenuReleaseHandler = { [weak self] in
+            self?.radialMenuController?.hotKeyReleased()
+        }
+        store.radialMenuPreviewHandler = { [weak self] items in
+            self?.radialMenuController?.toggleFromMenuBar(previewItems: items)
         }
         panelPositionCancellable = store.$panelPosition
             .removeDuplicates()
@@ -89,6 +100,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func togglePanel() {
         panel?.isVisible == true ? hidePanel() : showPanel()
+    }
+
+    func toggleRadialMenu() {
+        radialMenuController?.toggleFromMenuBar()
     }
 
     private func createPanel() {
@@ -238,6 +253,9 @@ struct CodeXMicroApp: App {
                 appDelegate.togglePanel()
             }
             .keyboardShortcut("m", modifiers: [.command, .option])
+            Button("显示快速启动轮盘") {
+                appDelegate.toggleRadialMenu()
+            }
             Divider()
             SettingsLink { Text("设置…") }
             Divider()

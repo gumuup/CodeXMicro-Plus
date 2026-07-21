@@ -18,6 +18,11 @@ final class CodexStore: ObservableObject {
     @Published private(set) var shortcutRecordingTarget: ShortcutTarget?
     @Published private(set) var isKeyMonitoringActive = false
     @Published private(set) var shortcutRegistrationFailures: [ShortcutTarget: ShortcutService.RegistrationFailure] = [:]
+    @Published private(set) var radialMenuItems: [RadialMenuItem]
+    @Published private(set) var radialMenuProfiles: [RadialMenuProfile]
+    @Published private(set) var selectedRadialMenuProfileID: UUID
+    @Published private(set) var radialItemShortcutRegistrationFailures: Set<UUID> = []
+    @Published private(set) var radialMenuGlobalModeEnabled: Bool
 
     @Published var hapticStrength: HapticStrength {
         didSet { UserDefaults.standard.set(hapticStrength.rawValue, forKey: Keys.hapticStrength) }
@@ -38,11 +43,15 @@ final class CodexStore: ObservableObject {
         static let codexUsageMetric = "codexUsageMetric"
         static let shortcutBindings = "shortcutBindings.v1"
         static let shortcutDefaultsVersion = "shortcutDefaultsVersion"
+        static let radialMenuItems = "radialMenuItems.v1"
+        static let radialMenuProfiles = "radialMenuProfiles.v1"
+        static let radialMenuGlobalModeEnabled = "radialMenuGlobalModeEnabled"
     }
 
     private enum AutomationRequest {
         case micro(MicroAction, successMessage: String?)
         case toolbox(ToolboxAction)
+        case radial(RadialMenuItem)
         case joystick(JoystickDirection)
         case voice(active: Bool)
         case openTask(CodexTask, index: Int)
@@ -62,6 +71,7 @@ final class CodexStore: ObservableObject {
     let automation: CodexAutomationService
     let haptics: HapticService
     private let shortcutService: ShortcutService
+    private let radialItemShortcutService: RadialItemShortcutService
     private var pollingTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
     private var shortcutRecordingTimeoutTask: Task<Void, Never>?
@@ -74,17 +84,22 @@ final class CodexStore: ObservableObject {
     private var pendingReasoningDeadline = Date.distantPast
     private var lastKnownAccessibilityTrust = false
     var quickLaunchHandler: (() -> Void)?
+    var radialMenuHandler: (() -> Void)?
+    var radialMenuReleaseHandler: (() -> Void)?
+    var radialMenuPreviewHandler: (([RadialMenuItem]) -> Void)?
 
     init(
         stateService: CodexStateService = CodexStateService(),
         automation: CodexAutomationService? = nil,
         haptics: HapticService? = nil,
-        shortcutService: ShortcutService? = nil
+        shortcutService: ShortcutService? = nil,
+        radialItemShortcutService: RadialItemShortcutService? = nil
     ) {
         self.stateService = stateService
         self.automation = automation ?? CodexAutomationService()
         self.haptics = haptics ?? HapticService()
         self.shortcutService = shortcutService ?? ShortcutService()
+        self.radialItemShortcutService = radialItemShortcutService ?? RadialItemShortcutService()
         self.hapticStrength = HapticStrength(rawValue: UserDefaults.standard.string(forKey: Keys.hapticStrength) ?? "standard") ?? .standard
         self.keySoundEnabled = UserDefaults.standard.object(forKey: Keys.keySound) as? Bool ?? true
         self.panelPosition = PanelPosition(
@@ -115,6 +130,10 @@ final class CodexStore: ObservableObject {
                migratedBindings[.quickLaunch] == ShortcutDefaults.legacyQuickLaunchBinding {
                 migratedBindings[.quickLaunch] = ShortcutDefaults.bindings[.quickLaunch]
             }
+            if installedDefaultsVersion < 5,
+               migratedBindings[.radialMenu] == nil {
+                migratedBindings[.radialMenu] = ShortcutDefaults.bindings[.radialMenu]
+            }
             self.shortcutBindings = migratedBindings
             if installedDefaultsVersion < ShortcutDefaults.currentVersion,
                let data = try? JSONEncoder().encode(migratedBindings) {
@@ -129,7 +148,40 @@ final class CodexStore: ObservableObject {
             }
         }
         self.shortcutRecordingTarget = nil
+        let legacyRadialItems = UserDefaults.standard.data(forKey: Keys.radialMenuItems).flatMap {
+            try? JSONDecoder().decode([RadialMenuItem].self, from: $0)
+        } ?? RadialMenuDefaults.items
+        let savedProfiles = UserDefaults.standard.data(forKey: Keys.radialMenuProfiles).flatMap {
+            try? JSONDecoder().decode([RadialMenuProfile].self, from: $0)
+        }
+        var profiles = savedProfiles?.isEmpty == false
+            ? savedProfiles!
+            : [RadialMenuDefaults.chatGPTProfile(items: legacyRadialItems)]
+        let hadGlobalProfile = profiles.contains(where: \.isGlobal)
+        if !hadGlobalProfile {
+            profiles.insert(RadialMenuDefaults.globalProfile(), at: 0)
+        }
+        let storedGlobalModeEnabled = UserDefaults.standard.object(
+            forKey: Keys.radialMenuGlobalModeEnabled
+        ) as? Bool
+        let globalModeEnabled = RadialMenuDefaults.initialGlobalModeEnabled(
+            savedProfilesExist: savedProfiles != nil,
+            storedValue: storedGlobalModeEnabled
+        )
+        let selectedProfile = globalModeEnabled
+            ? profiles.first(where: \.isGlobal) ?? profiles[0]
+            : profiles.first(where: \RadialMenuProfile.isDefault) ?? profiles[0]
+        self.radialMenuProfiles = profiles
+        self.selectedRadialMenuProfileID = selectedProfile.id
+        self.radialMenuItems = selectedProfile.items
+        self.radialMenuGlobalModeEnabled = globalModeEnabled
         self.lastKnownAccessibilityTrust = self.automation.isAccessibilityTrusted
+        if storedGlobalModeEnabled == nil {
+            UserDefaults.standard.set(globalModeEnabled, forKey: Keys.radialMenuGlobalModeEnabled)
+        }
+        if savedProfiles == nil || !hadGlobalProfile {
+            saveRadialMenuProfiles()
+        }
     }
 
     deinit {
@@ -145,6 +197,10 @@ final class CodexStore: ObservableObject {
             onRelease: { [weak self] target in self?.releaseShortcut(target) },
             onCapture: { [weak self] event in self?.handleShortcutCapture(event) }
         )
+        radialItemShortcutService.start { [weak self] gesture in
+            self?.performRadialItemShortcut(gesture)
+        }
+        radialItemShortcutRegistrationFailures = radialItemShortcutService.update(profiles: radialMenuProfiles)
         let registrationFailures = updateShortcutRegistrations()
         if let target = ShortcutTarget.allCases.first(where: { registrationFailures[$0] != nil }),
            let binding = shortcutBindings[target], let failure = registrationFailures[target] {
@@ -202,6 +258,207 @@ final class CodexStore: ObservableObject {
         } else {
             enqueueAutomation(.toolbox(action))
         }
+    }
+
+    func perform(_ item: RadialMenuItem) {
+        guard item.action != .unconfigured else {
+            showFeedback("该轮盘位置尚未配置")
+            return
+        }
+        haptics.radialConfirmation(strength: hapticStrength, soundEnabled: keySoundEnabled)
+        enqueueAutomation(.radial(item))
+    }
+
+    func addRadialMenuItem() {
+        guard radialMenuItems.count < 12 else {
+            showFeedback("轮盘最多放置 12 个操作")
+            return
+        }
+        radialMenuItems.append(
+            RadialMenuItem(
+                title: "新操作",
+                systemImage: "plus.circle.fill",
+                action: .codexToolbox(.openCodex)
+            )
+        )
+        saveSelectedRadialMenuItems()
+    }
+
+    func updateRadialMenuItem(_ item: RadialMenuItem) {
+        guard let index = radialMenuItems.firstIndex(where: { $0.id == item.id }) else { return }
+        var updatedItem = item
+        if let shortcut = updatedItem.triggerShortcut {
+            guard !shortcut.modifiers.isEmpty else {
+                updatedItem.triggerShortcut = nil
+                radialMenuItems[index] = updatedItem
+                saveSelectedRadialMenuItems()
+                showFeedback("轮盘项快捷键请至少包含一个修饰键")
+                return
+            }
+            if let target = shortcutBindings.first(where: { $0.value.gesture == shortcut.gesture })?.key {
+                updatedItem.triggerShortcut = nil
+                radialMenuItems[index] = updatedItem
+                saveSelectedRadialMenuItems()
+                showFeedback("\(shortcut.displayName) 已用于 \(target.title)")
+                return
+            }
+            if let duplicate = radialMenuItems.firstIndex(where: {
+                $0.id != item.id && $0.triggerShortcut?.gesture == shortcut.gesture
+            }) {
+                radialMenuItems[duplicate].triggerShortcut = nil
+                showFeedback("\(shortcut.displayName) 已改为触发 \(updatedItem.title)")
+            }
+        }
+        radialMenuItems[index] = updatedItem
+        saveSelectedRadialMenuItems()
+    }
+
+    func removeRadialMenuItem(id: UUID) {
+        guard radialMenuItems.count > 1 else {
+            showFeedback("轮盘至少保留一个操作")
+            return
+        }
+        radialMenuItems.removeAll { $0.id == id }
+        saveSelectedRadialMenuItems()
+    }
+
+    func moveRadialMenuItem(id: UUID, offset: Int) {
+        guard let source = radialMenuItems.firstIndex(where: { $0.id == id }) else { return }
+        let destination = min(max(source + offset, 0), radialMenuItems.count - 1)
+        guard destination != source else { return }
+        let item = radialMenuItems.remove(at: source)
+        radialMenuItems.insert(item, at: destination)
+        saveSelectedRadialMenuItems()
+    }
+
+    func moveRadialMenuItem(id: UUID, relativeTo targetID: UUID, insertAfter: Bool) {
+        guard id != targetID,
+              let source = radialMenuItems.firstIndex(where: { $0.id == id }) else { return }
+        let item = radialMenuItems.remove(at: source)
+        guard let target = radialMenuItems.firstIndex(where: { $0.id == targetID }) else {
+            radialMenuItems.insert(item, at: min(source, radialMenuItems.count))
+            return
+        }
+        let destination = min(target + (insertAfter ? 1 : 0), radialMenuItems.count)
+        radialMenuItems.insert(item, at: destination)
+        saveSelectedRadialMenuItems()
+        haptics.radialSelectionDetent(strength: hapticStrength)
+    }
+
+    func restoreDefaultRadialMenu() {
+        if selectedRadialMenuProfile?.isGlobal == true {
+            radialMenuItems = RadialMenuDefaults.globalItems
+        } else if selectedRadialMenuProfile?.isDefault == true {
+            radialMenuItems = RadialMenuDefaults.items
+        } else {
+            radialMenuItems = RadialMenuDefaults.emptyItems
+        }
+        saveSelectedRadialMenuItems()
+        showFeedback("已恢复 \(selectedRadialMenuProfile?.name ?? "应用") 的默认轮盘")
+    }
+
+    func previewRadialMenu() {
+        radialMenuPreviewHandler?(radialMenuItems)
+    }
+
+    var selectedRadialMenuProfile: RadialMenuProfile? {
+        radialMenuProfiles.first { $0.id == selectedRadialMenuProfileID }
+    }
+
+    func selectRadialMenuProfile(id: UUID) {
+        guard let profile = radialMenuProfiles.first(where: { $0.id == id }) else { return }
+        selectedRadialMenuProfileID = profile.id
+        radialMenuItems = profile.items
+    }
+
+    func setRadialMenuGlobalModeEnabled(_ enabled: Bool) {
+        guard radialMenuGlobalModeEnabled != enabled else { return }
+        radialMenuGlobalModeEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Keys.radialMenuGlobalModeEnabled)
+        if enabled {
+            if let globalProfile = radialMenuProfiles.first(where: \.isGlobal) {
+                selectRadialMenuProfile(id: globalProfile.id)
+            }
+        } else if let defaultProfile = radialMenuProfiles.first(where: \.isDefault) {
+            selectRadialMenuProfile(id: defaultProfile.id)
+        }
+        showFeedback(enabled ? "已开启轮盘全局模式" : "已恢复按应用匹配轮盘")
+    }
+
+    @discardableResult
+    func addRadialMenuProfile(applicationURL: URL) -> UUID? {
+        let bundle = Bundle(url: applicationURL)
+        guard let identifier = bundle?.bundleIdentifier, !identifier.isEmpty else {
+            showFeedback("无法读取该应用的标识")
+            return nil
+        }
+        if let existing = radialMenuProfiles.first(where: { $0.bundleIdentifier == identifier }) {
+            selectRadialMenuProfile(id: existing.id)
+            showFeedback("该应用已有轮盘预设")
+            return existing.id
+        }
+
+        let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? applicationURL.deletingPathExtension().lastPathComponent
+        let profile = RadialMenuProfile(
+            name: displayName,
+            applicationPath: applicationURL.path,
+            bundleIdentifier: identifier,
+            items: RadialMenuDefaults.emptyItems
+        )
+        radialMenuProfiles.append(profile)
+        selectedRadialMenuProfileID = profile.id
+        radialMenuItems = profile.items
+        saveRadialMenuProfiles()
+        showFeedback("已添加 \(displayName) 专属轮盘")
+        return profile.id
+    }
+
+    func removeRadialMenuProfile(id: UUID) {
+        guard let profile = radialMenuProfiles.first(where: { $0.id == id }),
+              !profile.isDefault, !profile.isGlobal else {
+            showFeedback("全局模式和 ChatGPT 默认预设不能删除")
+            return
+        }
+        radialMenuProfiles.removeAll { $0.id == id }
+        let fallback = radialMenuProfiles.first(where: \RadialMenuProfile.isDefault) ?? radialMenuProfiles[0]
+        selectedRadialMenuProfileID = fallback.id
+        radialMenuItems = fallback.items
+        saveRadialMenuProfiles()
+        showFeedback("已移除 \(profile.name) 预设")
+    }
+
+    func radialMenuItemsForFrontmostApplication() -> [RadialMenuItem] {
+        RadialMenuProfileResolver.items(
+            for: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+            profiles: radialMenuProfiles,
+            globalModeEnabled: radialMenuGlobalModeEnabled
+        )
+    }
+
+    func isRadialItemShortcutActive(itemID: UUID) -> Bool {
+        !radialItemShortcutRegistrationFailures.contains(itemID)
+    }
+
+    func setRadialItemShortcutRecording(_ active: Bool) {
+        radialItemShortcutService.setSuspended(active)
+        if !active {
+            radialItemShortcutRegistrationFailures = radialItemShortcutService.update(profiles: radialMenuProfiles)
+        }
+    }
+
+    private func performRadialItemShortcut(_ gesture: ShortcutGesture) {
+        let identifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let profile = RadialMenuProfileResolver.profile(
+            for: identifier,
+            profiles: radialMenuProfiles,
+            globalModeEnabled: radialMenuGlobalModeEnabled
+        )
+        guard let item = profile?.items.first(where: { $0.triggerShortcut?.gesture == gesture }) else {
+            return
+        }
+        perform(item)
     }
 
     func beginVoice() {
@@ -286,6 +543,14 @@ final class CodexStore: ObservableObject {
 
     func hoverDetent() {
         haptics.detent(strength: hapticStrength)
+    }
+
+    func radialMenuAppeared() {
+        haptics.radialReveal(strength: hapticStrength)
+    }
+
+    func radialSelectionDetent() {
+        haptics.radialSelectionDetent(strength: hapticStrength)
     }
 
     func activateCodexStatusButton() {
@@ -411,7 +676,12 @@ final class CodexStore: ObservableObject {
 
     private func triggerShortcut(_ target: ShortcutTarget) {
         switch target {
-        case .quickLaunch: quickLaunchHandler?()
+        case .quickLaunch:
+            if panelPosition == .bottom {
+                panelPosition = .top
+            }
+            quickLaunchHandler?()
+        case .radialMenu: radialMenuHandler?()
         case .togglePanelPosition:
             panelPosition = panelPosition == .top ? .bottom : .top
         case .agent1: openTask(at: 0)
@@ -438,18 +708,24 @@ final class CodexStore: ObservableObject {
     }
 
     private func releaseShortcut(_ target: ShortcutTarget) {
-        guard target == .voice else { return }
-        endVoice(from: .shortcut)
+        switch target {
+        case .radialMenu:
+            radialMenuReleaseHandler?()
+        case .voice:
+            endVoice(from: .shortcut)
+        default:
+            break
+        }
     }
 
     private func handleShortcutCapture(_ event: ShortcutService.CaptureEvent) {
         switch event {
         case let .captured(target, binding):
             shortcutRecordingTimeoutTask?.cancel()
-            guard target != .quickLaunch || !binding.modifiers.isEmpty else {
+            guard ![ShortcutTarget.quickLaunch, .radialMenu].contains(target) || !binding.modifiers.isEmpty else {
                 shortcutRecordingTarget = nil
                 _ = updateShortcutRegistrations()
-                showFeedback("快速启动快捷键请至少包含 Control、Option、Shift 或 Command")
+                showFeedback("系统级启动快捷键请至少包含 Control、Option、Shift 或 Command")
                 return
             }
             let previousBindings = shortcutBindings
@@ -457,7 +733,7 @@ final class CodexStore: ObservableObject {
                 $0.key != target && $0.value.gesture == binding.gesture
             })?.key
             if let reassignedTarget {
-                if target == .quickLaunch {
+                if target == .quickLaunch || target == .radialMenu {
                     shortcutRecordingTarget = nil
                     _ = updateShortcutRegistrations()
                     showFeedback("\(binding.displayName) 已用于 \(reassignedTarget.title)，请设置其他按键")
@@ -589,6 +865,14 @@ final class CodexStore: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(350))
                 await refresh()
 
+            case let .radial(item):
+                try await automation.perform(item.action)
+                showFeedback(item.title)
+                if case .codexToolbox = item.action {
+                    try? await Task.sleep(for: .milliseconds(350))
+                    await refresh()
+                }
+
             case let .joystick(direction):
                 try await automation.performJoystick(direction)
                 showFeedback("已执行：\(direction.title)")
@@ -629,6 +913,20 @@ final class CodexStore: ObservableObject {
             }
             showFeedback(error.localizedDescription)
         }
+    }
+
+    private func saveSelectedRadialMenuItems() {
+        guard let index = radialMenuProfiles.firstIndex(where: { $0.id == selectedRadialMenuProfileID }) else {
+            return
+        }
+        radialMenuProfiles[index].items = radialMenuItems
+        saveRadialMenuProfiles()
+    }
+
+    private func saveRadialMenuProfiles() {
+        guard let data = try? JSONEncoder().encode(radialMenuProfiles) else { return }
+        UserDefaults.standard.set(data, forKey: Keys.radialMenuProfiles)
+        radialItemShortcutRegistrationFailures = radialItemShortcutService.update(profiles: radialMenuProfiles)
     }
 
     private func showFeedback(_ message: String) {

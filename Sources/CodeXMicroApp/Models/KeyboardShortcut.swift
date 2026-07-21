@@ -334,7 +334,7 @@ struct CombinationKeyEventMatcher: Sendable {
 }
 
 enum ShortcutDefaults {
-    static let currentVersion = 4
+    static let currentVersion = 5
 
     static let legacyQuickLaunchBinding = KeyboardShortcutBinding(
         keyCode: 49,
@@ -347,6 +347,11 @@ enum ShortcutDefaults {
             keyCode: 49,
             modifiers: .option,
             keyLabel: "Space"
+        ),
+        .radialMenu: KeyboardShortcutBinding(
+            keyCode: 6,
+            modifiers: .control,
+            keyLabel: "Z"
         ),
         .togglePanelPosition: control(keyCode: 35, label: "P"),
         .fast: control(keyCode: 3, label: "F"),
@@ -389,6 +394,7 @@ enum ShortcutDefaults {
 
 enum ShortcutTarget: String, CaseIterable, Codable, Hashable, Sendable {
     case quickLaunch
+    case radialMenu
     case togglePanelPosition
     case agent1, agent2, agent3, agent4, agent5, agent6
     case joystickUp, joystickRight, joystickDown, joystickLeft
@@ -402,12 +408,13 @@ enum ShortcutTarget: String, CaseIterable, Codable, Hashable, Sendable {
     }
 
     static var configurablePadCases: [ShortcutTarget] {
-        allCases.filter { $0 != .quickLaunch && $0 != .togglePanelPosition }
+        allCases.filter { $0 != .quickLaunch && $0 != .radialMenu && $0 != .togglePanelPosition }
     }
 
     var title: String {
         switch self {
         case .quickLaunch: "快速启动"
+        case .radialMenu: "轮盘"
         case .togglePanelPosition: "切换悬浮位置"
         case .agent1: "A1"
         case .agent2: "A2"
