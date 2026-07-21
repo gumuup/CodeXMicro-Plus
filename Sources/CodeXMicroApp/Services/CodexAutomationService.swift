@@ -198,6 +198,9 @@ final class CodexAutomationService {
             try await perform(toolboxAction)
 
         case let .keyboardShortcut(binding):
+            guard !binding.isMouse else {
+                throw AutomationError.radialActionInvalid("键盘快捷键")
+            }
             try requireAccessibility()
             sendKeyGlobally(
                 CGKeyCode(binding.keyCode),

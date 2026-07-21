@@ -127,12 +127,20 @@ struct RadialMenuItem: Identifiable, Codable, Hashable, Sendable {
 }
 
 struct RadialMenuProfile: Identifiable, Codable, Hashable, Sendable {
+    static let presetCombinationCount = 10
+
     var id: UUID
     var name: String
     var applicationPath: String
     var bundleIdentifier: String
     var isDefault: Bool
-    var items: [RadialMenuItem]
+    var presetCombinations: [[RadialMenuItem]]
+    var selectedPresetIndex: Int
+
+    var items: [RadialMenuItem] {
+        get { presetCombinations[selectedPresetIndex] }
+        set { presetCombinations[selectedPresetIndex] = newValue }
+    }
 
     init(
         id: UUID = UUID(),
@@ -147,11 +155,71 @@ struct RadialMenuProfile: Identifiable, Codable, Hashable, Sendable {
         self.applicationPath = applicationPath
         self.bundleIdentifier = bundleIdentifier
         self.isDefault = isDefault
-        self.items = items
+        self.presetCombinations = Self.normalizedCombinations(seed: items)
+        self.selectedPresetIndex = 0
     }
 
     var isGlobal: Bool {
         bundleIdentifier == RadialMenuDefaults.globalBundleIdentifier
+    }
+
+    mutating func selectPreset(at index: Int) {
+        selectedPresetIndex = min(max(index, 0), Self.presetCombinationCount - 1)
+    }
+
+    private static func normalizedCombinations(seed: [RadialMenuItem]) -> [[RadialMenuItem]] {
+        [seed] + (1..<presetCombinationCount).map { _ in RadialMenuDefaults.emptyItems }
+    }
+
+    private static func normalizedCombinations(_ combinations: [[RadialMenuItem]]) -> [[RadialMenuItem]] {
+        var result = Array(combinations.prefix(presetCombinationCount))
+        if result.isEmpty { result.append(RadialMenuDefaults.emptyItems) }
+        while result.count < presetCombinationCount {
+            result.append(RadialMenuDefaults.emptyItems)
+        }
+        return result
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case applicationPath
+        case bundleIdentifier
+        case isDefault
+        case items
+        case presetCombinations
+        case selectedPresetIndex
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        applicationPath = try container.decode(String.self, forKey: .applicationPath)
+        bundleIdentifier = try container.decode(String.self, forKey: .bundleIdentifier)
+        isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
+
+        let legacyItems = try container.decodeIfPresent([RadialMenuItem].self, forKey: .items)
+            ?? RadialMenuDefaults.emptyItems
+        let decodedCombinations = try container.decodeIfPresent(
+            [[RadialMenuItem]].self,
+            forKey: .presetCombinations
+        ) ?? [legacyItems]
+        presetCombinations = Self.normalizedCombinations(decodedCombinations)
+        let decodedIndex = try container.decodeIfPresent(Int.self, forKey: .selectedPresetIndex) ?? 0
+        selectedPresetIndex = min(max(decodedIndex, 0), Self.presetCombinationCount - 1)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(applicationPath, forKey: .applicationPath)
+        try container.encode(bundleIdentifier, forKey: .bundleIdentifier)
+        try container.encode(isDefault, forKey: .isDefault)
+        try container.encode(items, forKey: .items)
+        try container.encode(presetCombinations, forKey: .presetCombinations)
+        try container.encode(selectedPresetIndex, forKey: .selectedPresetIndex)
     }
 }
 
@@ -343,6 +411,25 @@ enum RadialIconCatalog {
         "location.fill", "house.fill", "building.2.fill", "cart.fill", "creditcard.fill", "gift.fill",
         "lightbulb.fill", "flame.fill", "leaf.fill", "moon.fill", "sun.max.fill", "power",
         "ellipsis.circle.fill", "ellipsis.rectangle.fill", "puzzlepiece.extension.fill", "square.stack.3d.up.fill",
+        "macwindow", "macwindow.badge.plus", "menubar.rectangle", "dock.rectangle", "switch.2",
+        "battery.100", "battery.50", "printer.fill", "scanner.fill", "server.rack", "opticaldiscdrive.fill",
+        "envelope.fill", "envelope.open.fill", "phone.fill", "phone.arrow.up.right.fill", "bell.badge.fill",
+        "person.crop.circle.badge.plus", "person.3.fill", "person.2.badge.gearshape.fill", "shared.with.you",
+        "text.cursor", "character.cursor.ibeam", "paragraphsign", "text.alignleft", "text.aligncenter",
+        "bold", "italic", "underline", "strikethrough", "increase.indent", "decrease.indent",
+        "eraser.fill", "crop", "rotate.left.fill", "rotate.right.fill", "arrow.uturn.backward",
+        "ruler.fill", "scribble.variable", "lasso", "lasso.badge.sparkles", "circle.hexagongrid.fill",
+        "film.fill", "play.rectangle.fill", "music.note.list", "music.mic", "speaker.wave.3.fill",
+        "location.circle.fill", "location.north.fill", "map.circle.fill", "signpost.right.fill",
+        "house.circle.fill", "building.columns.fill", "car.fill", "airplane", "tram.fill",
+        "arrowshape.left.fill", "arrowshape.right.fill", "arrowshape.up.fill", "arrowshape.down.fill",
+        "chevron.up.chevron.down", "arrow.left.arrow.right", "arrow.up.arrow.down", "arrow.triangle.2.circlepath",
+        "rectangle.and.pencil.and.ellipsis", "square.and.pencil", "doc.badge.plus", "folder.badge.gearshape",
+        "tray.and.arrow.down.fill", "tray.and.arrow.up.fill", "calendar.badge.plus", "clock.arrow.circlepath",
+        "chart.line.uptrend.xyaxis", "chart.pie.fill", "chart.dots.scatter", "tablecells.badge.ellipsis",
+        "terminal", "apple.terminal.fill", "chevron.left.forwardslash.chevron.right", "curlybraces.square.fill",
+        "ladybug.circle.fill", "hammer.circle.fill", "wrench.adjustable.fill", "shippingbox.circle.fill",
+        "network.badge.shield.half.filled", "globe.americas.fill", "globe.asia.australia.fill",
     ]
 
     static let allSymbols: [String] = Array(Set(codexSymbols + systemSymbols)).sorted()

@@ -34,6 +34,19 @@ struct RadialMenuSettingsView: View {
         .onChange(of: store.selectedRadialMenuProfileID) { _, _ in
             selection = store.radialMenuItems.first?.id
         }
+        .background {
+            RadialClipboardCommandBridge(
+                onCopy: {
+                    guard let selection else { return }
+                    store.copyRadialMenuItem(id: selection)
+                },
+                onPaste: {
+                    guard let selection else { return }
+                    store.pasteRadialMenuItem(to: selection)
+                }
+            )
+            .frame(width: 0, height: 0)
+        }
     }
 
     private var hotKeyHeader: some View {
@@ -190,9 +203,16 @@ struct RadialMenuSettingsView: View {
 
     private var wheelAndItems: some View {
         VStack(alignment: .leading, spacing: 12) {
-            MiniRadialMenuPreview(items: store.radialMenuItems, selection: $selection)
+            MiniRadialMenuPreview(
+                items: store.radialMenuItems,
+                selection: $selection,
+                onCopy: store.copyRadialMenuItem,
+                onPaste: store.pasteRadialMenuItem
+            )
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
+
+            presetCombinationPicker
 
             HStack {
                 Text("轮盘操作")
@@ -222,6 +242,14 @@ struct RadialMenuSettingsView: View {
                         onDelete: {
                             store.removeRadialMenuItem(id: item.id)
                         },
+                        onCopy: {
+                            selection = item.id
+                            store.copyRadialMenuItem(id: item.id)
+                        },
+                        onPaste: {
+                            selection = item.id
+                            store.pasteRadialMenuItem(to: item.id)
+                        },
                         onDrop: { draggedID, insertAfter in
                             store.moveRadialMenuItem(
                                 id: draggedID,
@@ -238,6 +266,55 @@ struct RadialMenuSettingsView: View {
 
         }
         .padding(14)
+    }
+
+    private var presetCombinationPicker: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("预设组合")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text("自动保存 · \(store.selectedRadialPresetIndex + 1)/\(RadialMenuProfile.presetCombinationCount)")
+                    .font(.system(size: 9).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 3) {
+                ForEach(0..<RadialMenuProfile.presetCombinationCount, id: \.self) { index in
+                    let isSelected = store.selectedRadialPresetIndex == index
+                    Button {
+                        store.selectRadialPreset(at: index)
+                        selection = store.radialMenuItems.first?.id
+                    } label: {
+                        Text("\(index + 1)")
+                            .font(.system(size: 10, weight: isSelected ? .bold : .medium).monospacedDigit())
+                            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 23)
+                            .background(
+                                isSelected ? Color.accentColor : Color.primary.opacity(0.055),
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(
+                                        isSelected ? Color.accentColor : Color.primary.opacity(0.08),
+                                        lineWidth: 0.75
+                                    )
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help("切换到预设组合 \(index + 1)")
+                    .accessibilityLabel("预设组合 \(index + 1)")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+        }
+        .padding(8)
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.75)
+        }
     }
 
     @ViewBuilder
@@ -329,6 +406,8 @@ private struct RadialMenuOperationRow: View {
     let canDelete: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
+    let onCopy: () -> Void
+    let onPaste: () -> Void
     let onDrop: (UUID, Bool) -> Void
 
     @State private var isHovering = false
@@ -342,17 +421,21 @@ private struct RadialMenuOperationRow: View {
                 .opacity(showsControls ? 1 : 0)
                 .allowsHitTesting(showsControls)
                 .draggable(item.id.uuidString) {
-                    Label(item.title, systemImage: item.systemImage)
+                    HStack(spacing: 6) {
+                        RadialIconView(value: item.systemImage, size: 14, systemColor: .blue)
+                            .frame(width: 18, height: 18)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        Text(item.title)
+                    }
                         .padding(8)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
                 .help("拖动调整位置")
 
-            Image(systemName: item.systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.blue)
+            RadialIconView(value: item.systemImage, size: 15, systemColor: .blue)
                 .frame(width: 25, height: 25)
                 .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title).lineLimit(1)
@@ -387,6 +470,14 @@ private struct RadialMenuOperationRow: View {
                 .fill(rowBackground)
         }
         .onTapGesture(perform: onSelect)
+        .contextMenu {
+            Button(action: onCopy) {
+                Label("复制轮盘操作", systemImage: "doc.on.doc")
+            }
+            Button(action: onPaste) {
+                Label("粘贴到此位置", systemImage: "doc.on.clipboard")
+            }
+        }
         .onHover { isHovering = $0 }
         .dropDestination(for: String.self) { draggedValues, location in
             guard let value = draggedValues.first,
@@ -436,6 +527,8 @@ private struct SixDotDragHandle: View {
 private struct MiniRadialMenuPreview: View {
     let items: [RadialMenuItem]
     @Binding var selection: UUID?
+    let onCopy: (UUID) -> Void
+    let onPaste: (UUID) -> Void
 
     var body: some View {
         ZStack {
@@ -453,6 +546,20 @@ private struct MiniRadialMenuPreview: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button {
+                        selection = item.id
+                        onCopy(item.id)
+                    } label: {
+                        Label("复制轮盘操作", systemImage: "doc.on.doc")
+                    }
+                    Button {
+                        selection = item.id
+                        onPaste(item.id)
+                    } label: {
+                        Label("粘贴到此位置", systemImage: "doc.on.clipboard")
+                    }
+                }
                 .offset(x: cos(angle.radians) * 82, y: sin(angle.radians) * 82)
                 .animation(.spring(response: 0.22, dampingFraction: 0.68), value: selection)
             }
@@ -520,9 +627,9 @@ private struct RadialMenuItemEditor: View {
                     Button {
                         showsIconPicker.toggle()
                     } label: {
-                        Image(systemName: draft.systemImage)
-                            .font(.system(size: 24, weight: .semibold))
+                        RadialIconView(value: draft.systemImage, size: 24)
                             .frame(width: 44, height: 38)
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
                     }
                     .buttonStyle(.bordered)
                     .popover(isPresented: $showsIconPicker, arrowEdge: .bottom) {
@@ -753,51 +860,9 @@ private struct RadialMenuItemEditor: View {
 
 private struct RadialIconPicker: View {
     @Binding var selection: String
-    @State private var query = ""
-    @State private var showsCodexOnly = true
-
-    private let columns = Array(repeating: GridItem(.fixed(38), spacing: 7), count: 8)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker("图标来源", selection: $showsCodexOnly) {
-                Text("Codex").tag(true)
-                Text("macOS 系统符号").tag(false)
-            }
-            .pickerStyle(.segmented)
-
-            TextField("搜索 SF Symbol 名称", text: $query)
-                .textFieldStyle(.roundedBorder)
-
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 7) {
-                    ForEach(filteredSymbols, id: \.self) { symbol in
-                        Button {
-                            selection = symbol
-                        } label: {
-                            Image(systemName: symbol)
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(width: 36, height: 34)
-                                .background(selection == symbol ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .strokeBorder(selection == symbol ? Color.accentColor : Color.primary.opacity(0.08))
-                                }
-                        }
-                        .buttonStyle(.plain)
-                        .help(symbol)
-                    }
-                }
-            }
-        }
-        .padding(14)
-        .frame(width: 390, height: 390)
-    }
-
-    private var filteredSymbols: [String] {
-        let source = showsCodexOnly ? RadialIconCatalog.codexSymbols : RadialIconCatalog.allSymbols
-        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty ? source : source.filter { $0.lowercased().contains(normalized) }
+        RadialIconLibraryPicker(selection: $selection)
     }
 }
 
@@ -806,6 +871,7 @@ private final class LocalShortcutRecorder: ObservableObject {
     @Published var isRecording = false
     private var monitor: Any?
     private var onStop: (() -> Void)?
+    private var hidObserverToken: UUID?
 
     func start(
         onStop: (() -> Void)? = nil,
@@ -814,6 +880,15 @@ private final class LocalShortcutRecorder: ObservableObject {
         stop()
         self.onStop = onStop
         isRecording = true
+        hidObserverToken = HIDButtonMonitor.shared.addObserver { [weak self] event in
+            guard let self, self.isRecording, event.phase == .down,
+                  event.identifier.usage > 3 else { return }
+            let modifiers = ShortcutModifiers(
+                eventFlagsRawValue: CGEventSource.flagsState(.combinedSessionState).rawValue
+            )
+            self.stop()
+            onCapture(.hidButton(event.identifier, modifiers: modifiers))
+        }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == 53 {
@@ -840,6 +915,8 @@ private final class LocalShortcutRecorder: ObservableObject {
     func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        HIDButtonMonitor.shared.removeObserver(hidObserverToken)
+        hidObserverToken = nil
         isRecording = false
         let callback = onStop
         onStop = nil
@@ -881,7 +958,7 @@ private struct OptionalShortcutRecorderButton: View {
                     validationMessage = nil
                     onRecordingChanged(true)
                     recorder.start(onStop: { onRecordingChanged(false) }) { captured in
-                        guard !captured.modifiers.isEmpty else {
+                        guard captured.isHIDButton || !captured.modifiers.isEmpty else {
                             validationMessage = "请至少按住一个修饰键"
                             return
                         }

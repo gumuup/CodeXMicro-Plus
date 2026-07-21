@@ -159,6 +159,33 @@ precondition(
 )
 precondition(RadialMenuDefaults.items.allSatisfy { $0.triggerShortcut == nil })
 precondition(RadialMenuDefaults.globalItems.allSatisfy { $0.triggerShortcut == nil })
+precondition(RadialMenuProfile.presetCombinationCount == 10)
+let originalSinglePresetProfile = RadialMenuDefaults.chatGPTProfile()
+let encodedSinglePresetProfile = try JSONEncoder().encode(originalSinglePresetProfile)
+var legacyProfileObject = try JSONSerialization.jsonObject(with: encodedSinglePresetProfile) as! [String: Any]
+legacyProfileObject.removeValue(forKey: "presetCombinations")
+legacyProfileObject.removeValue(forKey: "selectedPresetIndex")
+let legacyProfileData = try JSONSerialization.data(withJSONObject: legacyProfileObject)
+let migratedProfile = try JSONDecoder().decode(RadialMenuProfile.self, from: legacyProfileData)
+precondition(migratedProfile.presetCombinations.count == 10)
+precondition(migratedProfile.selectedPresetIndex == 0)
+precondition(migratedProfile.items == RadialMenuDefaults.items)
+precondition(migratedProfile.presetCombinations.dropFirst().allSatisfy {
+    $0.count == 8 && $0.allSatisfy { $0.action == .unconfigured }
+})
+var switchedPresetProfile = migratedProfile
+switchedPresetProfile.selectPreset(at: 9)
+precondition(switchedPresetProfile.selectedPresetIndex == 9)
+precondition(switchedPresetProfile.items.allSatisfy { $0.action == .unconfigured })
+let slotTenItem = RadialMenuItem(title: "第十组", systemImage: "10.circle", action: .pasteText("10"))
+switchedPresetProfile.items = [slotTenItem]
+let roundTrippedPresetProfile = try JSONDecoder().decode(
+    RadialMenuProfile.self,
+    from: JSONEncoder().encode(switchedPresetProfile)
+)
+precondition(roundTrippedPresetProfile.selectedPresetIndex == 9)
+precondition(roundTrippedPresetProfile.items == [slotTenItem])
+precondition(roundTrippedPresetProfile.presetCombinations[0] == RadialMenuDefaults.items)
 precondition(RadialMenuDefaults.initialGlobalModeEnabled(savedProfilesExist: false, storedValue: nil))
 precondition(!RadialMenuDefaults.initialGlobalModeEnabled(savedProfilesExist: true, storedValue: nil))
 precondition(!RadialMenuDefaults.initialGlobalModeEnabled(savedProfilesExist: false, storedValue: false))
@@ -168,6 +195,23 @@ precondition(Set(emptyRadialItems.map(\.id)).count == 8)
 precondition(emptyRadialItems.allSatisfy { $0.title == "未设置" && $0.action == .unconfigured })
 precondition(RadialIconCatalog.codexSymbols.contains(ToolboxAction.runTests.systemImage))
 precondition(RadialIconCatalog.allSymbols.count > 100)
+precondition(RadialIconReference(rawValue: "sparkles") == .system("sparkles"))
+precondition(RadialIconReference(rawValue: "emoji:😀") == .emoji("😀"))
+precondition(RadialIconReference.emoji("🧠").rawValue == "emoji:🧠")
+precondition(RadialIconReference.local("custom.png").rawValue == "local:custom.png")
+precondition(RadialEmojiCatalog.categories.map(\.title) == [
+    "表情与人物", "动物与自然", "食物与饮品", "活动", "旅行与地点", "物品", "符号", "旗帜",
+])
+precondition(RadialEmojiCatalog.search("电脑", categoryID: nil).contains("💻"))
+precondition(RadialEmojiCatalog.search("数字", categoryID: nil).prefix(5).contains("1️⃣"))
+precondition(RadialEmojiCatalog.search("用户", categoryID: nil).contains("👤"))
+precondition(RadialEmojiCatalog.search("shuz", categoryID: nil).contains("🔢"))
+precondition(RadialEmojiCatalog.search("完全不存在的关键词", categoryID: nil).isEmpty)
+precondition(RadialSymbolCatalog.categories.allSatisfy { !$0.symbols.isEmpty })
+precondition(RadialSymbolCatalog.search("数字", categoryID: nil).contains("number"))
+precondition(RadialSymbolCatalog.search("用户", categoryID: nil).contains("person.fill"))
+precondition(RadialSymbolCatalog.search("cirlce", categoryID: nil).contains("checkmark.circle.fill"))
+precondition(RadialFuzzySearch.score(query: "seting", fields: ["settings gear"]) != nil)
 let radialPayload = [
     RadialMenuItem(title: "Codex", systemImage: "keyboard.fill", action: .codexToolbox(.openCodex)),
     RadialMenuItem(title: "Web", systemImage: "globe", action: .website(url: "https://openai.com")),
@@ -181,6 +225,23 @@ let radialPayload = [
 let radialData = try JSONEncoder().encode(radialPayload)
 let decodedRadialPayload = try JSONDecoder().decode([RadialMenuItem].self, from: radialData)
 precondition(decodedRadialPayload == radialPayload)
+let clipboardSourceItem = RadialMenuItem(
+    title: "可复制操作",
+    systemImage: "emoji:📋",
+    action: .pasteText("跨预设粘贴"),
+    triggerShortcut: KeyboardShortcutBinding(keyCode: 8, modifiers: [.command, .shift], keyLabel: "C")
+)
+let clipboardData = try RadialMenuClipboard.encodedData(for: clipboardSourceItem)
+let clipboardDecodedItem = try RadialMenuClipboard.decodedItem(from: clipboardData)
+precondition(clipboardDecodedItem == clipboardSourceItem)
+var clipboardTargetItem = clipboardDecodedItem
+let clipboardTargetID = UUID()
+clipboardTargetItem.id = clipboardTargetID
+precondition(clipboardTargetItem.id == clipboardTargetID)
+precondition(clipboardTargetItem.title == clipboardSourceItem.title)
+precondition(clipboardTargetItem.systemImage == clipboardSourceItem.systemImage)
+precondition(clipboardTargetItem.action == clipboardSourceItem.action)
+precondition(clipboardTargetItem.triggerShortcut == clipboardSourceItem.triggerShortcut)
 precondition(RadialMenuAction.defaultAction(for: .folder).kind == .folder)
 precondition(RadialMenuAction.defaultAction(for: .shortcut).kind == .shortcut)
 precondition(RadialMenuAction.defaultAction(for: .unconfigured) == .unconfigured)
@@ -229,6 +290,77 @@ precondition(homeShortcut.displayName == "Home")
 precondition(homeShortcut.activationMode == .directKey)
 precondition(homeShortcut.activationMode.label == "物理按键映射 · 一级")
 precondition(fastShortcut.activationMode.label == "组合按键映射 · 一级监听")
+let mouseSideButton = KeyboardShortcutBinding.mouse(button: 3, modifiers: [])
+precondition(mouseSideButton.displayName == "鼠标侧键 1")
+precondition(mouseSideButton.activationMode == .mouseButton)
+precondition(mouseSideButton.gesture == ShortcutGesture(mouseButton: 3, modifiers: []))
+precondition(!mouseSideButton.isUnsafeUnmodifiedPrimaryMouseButton)
+precondition(KeyboardShortcutBinding.mouse(button: 0, modifiers: []).isUnsafeUnmodifiedPrimaryMouseButton)
+let mxMacroButton = HIDButtonIdentifier(
+    vendorID: 0x046D,
+    productID: 0xB034,
+    usage: 6,
+    deviceName: "MX Master 3S"
+)
+let renamedMXMacroButton = HIDButtonIdentifier(
+    vendorID: 0x046D,
+    productID: 0xB034,
+    usage: 6,
+    deviceName: "Logitech MX Master 3S"
+)
+let hidMacroBinding = KeyboardShortcutBinding.hidButton(mxMacroButton, modifiers: [])
+precondition(mxMacroButton == renamedMXMacroButton)
+precondition(hidMacroBinding.displayName == "MX Master 3S · 宏键 6")
+precondition(hidMacroBinding.activationMode == .hidButton)
+precondition(hidMacroBinding.gesture == ShortcutGesture(hidButton: renamedMXMacroButton, modifiers: []))
+let encodedHIDBinding = try JSONEncoder().encode(hidMacroBinding)
+let decodedHIDBinding = try JSONDecoder().decode(
+    KeyboardShortcutBinding.self,
+    from: encodedHIDBinding
+)
+precondition(decodedHIDBinding == hidMacroBinding)
+var hidMatcher = HIDButtonEventMatcher()
+let hidTargets = [hidMacroBinding.gesture: ShortcutTarget.radialMenu]
+precondition(hidMatcher.handle(
+    button: mxMacroButton,
+    modifiers: [],
+    phase: .down,
+    targetsByGesture: hidTargets
+) == .trigger(.radialMenu))
+precondition(hidMatcher.handle(
+    button: mxMacroButton,
+    modifiers: [],
+    phase: .down,
+    targetsByGesture: hidTargets
+) == .suppress)
+precondition(hidMatcher.handle(
+    button: mxMacroButton,
+    modifiers: [],
+    phase: .up,
+    targetsByGesture: hidTargets
+) == .release(.radialMenu))
+let encodedMouseBinding = try JSONEncoder().encode(mouseSideButton)
+let decodedMouseBinding = try JSONDecoder().decode(KeyboardShortcutBinding.self, from: encodedMouseBinding)
+precondition(decodedMouseBinding == mouseSideButton)
+let legacyBindingJSON = Data(#"{"keyCode":115,"modifiers":0,"keyLabel":"Home"}"#.utf8)
+let decodedLegacyBinding = try JSONDecoder().decode(KeyboardShortcutBinding.self, from: legacyBindingJSON)
+precondition(decodedLegacyBinding == homeShortcut)
+var mouseMatcher = MouseButtonEventMatcher()
+let mouseTargets = [mouseSideButton.gesture: ShortcutTarget.fast]
+precondition(mouseMatcher.handle(
+    button: 3,
+    modifiers: [],
+    phase: .down,
+    isSynthetic: false,
+    targetsByGesture: mouseTargets
+) == .trigger(.fast))
+precondition(mouseMatcher.handle(
+    button: 3,
+    modifiers: [],
+    phase: .up,
+    isSynthetic: false,
+    targetsByGesture: mouseTargets
+) == .release(.fast))
 let enabledControlSpace: [String: Any] = [
     "60": [
         "enabled": NSNumber(value: true),
@@ -472,6 +604,28 @@ precondition(enlargedBottomRightFrame.minX == initialPanelFrame.minX)
 precondition(enlargedBottomRightFrame.maxY == initialPanelFrame.maxY)
 precondition(PanelResizeCorner.topRight.sizeDelta(from: .zero, to: NSPoint(x: 20, y: 20)) == 20)
 precondition(PanelResizeCorner.bottomLeft.sizeDelta(from: .zero, to: NSPoint(x: -20, y: -20)) == 20)
+let pointerVisibleFrame = NSRect(x: 100, y: 50, width: 1_000, height: 800)
+let pointerPanelSize = NSSize(width: 400, height: 400)
+precondition(PointerPanelPlacement.origin(
+    pointer: NSPoint(x: 600, y: 450),
+    panelSize: pointerPanelSize,
+    visibleFrame: pointerVisibleFrame
+) == NSPoint(x: 400, y: 250))
+precondition(PointerPanelPlacement.origin(
+    pointer: NSPoint(x: 105, y: 55),
+    panelSize: pointerPanelSize,
+    visibleFrame: pointerVisibleFrame
+) == NSPoint(x: 100, y: 50))
+precondition(PointerPanelPlacement.origin(
+    pointer: NSPoint(x: 1_095, y: 845),
+    panelSize: pointerPanelSize,
+    visibleFrame: pointerVisibleFrame
+) == NSPoint(x: 700, y: 450))
+precondition(PointerPanelPlacement.origin(
+    pointer: NSPoint(x: -900, y: 400),
+    panelSize: NSSize(width: 300, height: 300),
+    visibleFrame: NSRect(x: -1_200, y: 0, width: 1_200, height: 900)
+) == NSPoint(x: -1_050, y: 250))
 let resizeHandle = PanelResizeHandleView(corner: .bottomRight)
 resizeHandle.frame = NSRect(x: 0, y: 0, width: 40, height: 40)
 resizeHandle.updateTrackingAreas()

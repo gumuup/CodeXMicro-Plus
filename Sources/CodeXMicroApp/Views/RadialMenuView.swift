@@ -142,18 +142,20 @@ struct RadialActionIcon: View {
 
     var body: some View {
         Group {
-            if let appIcon {
+            if usesApplicationIcon, let appIcon {
                 Image(nsImage: appIcon)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
                     .padding(showsTile ? 2 : 0)
             } else {
-                Image(systemName: item.systemImage)
-                    .font(.system(size: size * 0.45, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(showsTile ? Color.white : tint)
+                RadialIconView(
+                    value: item.systemImage,
+                    size: iconSize,
+                    systemColor: showsTile ? .white : tint
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(localIconPadding)
                     .background {
                         if showsTile {
                             RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
@@ -169,6 +171,7 @@ struct RadialActionIcon: View {
             }
         }
         .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: showsTile ? size * 0.25 : size * 0.18, style: .continuous))
         .overlay {
             if showsTile {
                 RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
@@ -178,6 +181,28 @@ struct RadialActionIcon: View {
                     )
             }
         }
+    }
+
+    private var iconReference: RadialIconReference {
+        RadialIconReference(rawValue: item.systemImage)
+    }
+
+    private var usesApplicationIcon: Bool {
+        guard case let .system(symbol) = iconReference else { return false }
+        return symbol == "app.fill" || symbol == "macwindow"
+    }
+
+    private var iconSize: CGFloat {
+        switch iconReference {
+        case .emoji: size * 0.56
+        case .local: size
+        case .system: size * 0.45
+        }
+    }
+
+    private var localIconPadding: CGFloat {
+        if case .local = iconReference { return showsTile ? 0 : 1 }
+        return 0
     }
 
     private var appIcon: NSImage? {

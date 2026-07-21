@@ -6,8 +6,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 PROCESS_PATTERN='CodeXMicro\+\+'
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="3.0.0"
-BUILD_NUMBER="300"
+VERSION="3.1.0"
+BUILD_NUMBER="310"
 MIN_SYSTEM_VERSION="14.0"
 SIGNING_NAME="CodexMicro Local Development"
 SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -138,10 +138,14 @@ PLIST
 
 LAUNCHED_PID=""
 open_app() {
-  # Launch this exact build. LaunchServices may otherwise reopen an older
-  # /Applications copy that has the same bundle identifier.
-  /usr/bin/nohup "$APP_BINARY" >/dev/null 2>&1 &
-  LAUNCHED_PID="$!"
+  # Launch the exact staged bundle so SwiftUI receives normal macOS app
+  # lifecycle handling instead of being auto-terminated as a raw executable.
+  /usr/bin/open -n "$APP_BUNDLE"
+  for _ in {1..20}; do
+    LAUNCHED_PID="$(pgrep -x "$PROCESS_PATTERN" | /usr/bin/tail -n 1 || true)"
+    [[ -n "$LAUNCHED_PID" ]] && break
+    sleep 0.1
+  done
 }
 
 case "$MODE" in
