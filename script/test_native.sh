@@ -26,6 +26,8 @@ cd "$ROOT_DIR"
   Sources/CodeXMicroApp/Models/MicroAction.swift \
   Sources/CodeXMicroApp/Models/KeyboardShortcut.swift \
   Sources/CodeXMicroApp/Models/ToolboxAction.swift \
+  Sources/CodeXMicroApp/Models/RadialMenuItem.swift \
+  Sources/CodeXMicroApp/Models/SystemApplicationCatalog.swift \
   Sources/CodeXMicroApp/Support/DialStepResolver.swift \
   Sources/CodeXMicroApp/Support/DialInteractionView.swift \
   Sources/CodeXMicroApp/Support/CodexKeybindingResolver.swift \

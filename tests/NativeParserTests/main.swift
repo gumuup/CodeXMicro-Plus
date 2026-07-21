@@ -116,11 +116,76 @@ precondition(legacyShortcutPayload[.fast] == fastShortcut)
 precondition(ShortcutTarget.agent(at: 0) == .agent1)
 precondition(ShortcutTarget.agent(at: 5) == .agent6)
 precondition(ShortcutTarget.agent(at: 6) == nil)
-precondition(ShortcutTarget.allCases.count == 21)
+precondition(ShortcutTarget.allCases.count == 22)
 precondition(ShortcutTarget.configurablePadCases.count == 19)
 precondition(!ShortcutTarget.configurablePadCases.contains(.quickLaunch))
+precondition(!ShortcutTarget.configurablePadCases.contains(.radialMenu))
 precondition(!ShortcutTarget.configurablePadCases.contains(.togglePanelPosition))
 precondition(ShortcutDefaults.bindings.count == ShortcutTarget.allCases.count)
+precondition(ShortcutDefaults.bindings[.quickLaunch]?.displayName == "⌥Space")
+precondition(ShortcutDefaults.bindings[.radialMenu]?.displayName == "⌃Z")
+precondition(RadialMenuDefaults.items.count == 7)
+precondition(Set(RadialMenuDefaults.items.map(\.id)).count == RadialMenuDefaults.items.count)
+precondition(
+    RadialMenuDefaults.items.map(\.title)
+        == ["打开 Codex", "侧边栏", "上一个任务", "下一个任务", "搜索任务", "终端", "Skills"]
+)
+precondition(
+    RadialMenuDefaults.items.map(\.action) == [
+        .codexToolbox(.openCodex),
+        .codexToolbox(.toggleSidebar),
+        .codexToolbox(.previousTask),
+        .codexToolbox(.nextTask),
+        .codexToolbox(.searchTasks),
+        .codexToolbox(.terminal),
+        .codexToolbox(.skills),
+    ]
+)
+precondition(
+    RadialMenuDefaults.globalItems.map(\.title)
+        == ["ChatGPT", "微信", "飞书", "剪映", "App Store", "系统设置", "谷歌浏览器", "终端"]
+)
+precondition(
+    RadialMenuDefaults.globalItems.map(\.action) == [
+        .application(path: "/Applications/ChatGPT.app"),
+        .application(path: "/Applications/WeChat.app"),
+        .application(path: "/Applications/Lark.app"),
+        .application(path: "/Applications/VideoFusion-macOS.app"),
+        .application(path: "/System/Applications/App Store.app"),
+        .systemApplication(path: "/System/Applications/System Settings.app"),
+        .application(path: "/Applications/Google Chrome.app"),
+        .application(path: "/System/Applications/Utilities/Terminal.app"),
+    ]
+)
+precondition(RadialMenuDefaults.items.allSatisfy { $0.triggerShortcut == nil })
+precondition(RadialMenuDefaults.globalItems.allSatisfy { $0.triggerShortcut == nil })
+precondition(RadialMenuDefaults.initialGlobalModeEnabled(savedProfilesExist: false, storedValue: nil))
+precondition(!RadialMenuDefaults.initialGlobalModeEnabled(savedProfilesExist: true, storedValue: nil))
+precondition(!RadialMenuDefaults.initialGlobalModeEnabled(savedProfilesExist: false, storedValue: false))
+let emptyRadialItems = RadialMenuDefaults.emptyItems
+precondition(emptyRadialItems.count == 8)
+precondition(Set(emptyRadialItems.map(\.id)).count == 8)
+precondition(emptyRadialItems.allSatisfy { $0.title == "未设置" && $0.action == .unconfigured })
+precondition(RadialIconCatalog.codexSymbols.contains(ToolboxAction.runTests.systemImage))
+precondition(RadialIconCatalog.allSymbols.count > 100)
+let radialPayload = [
+    RadialMenuItem(title: "Codex", systemImage: "keyboard.fill", action: .codexToolbox(.openCodex)),
+    RadialMenuItem(title: "Web", systemImage: "globe", action: .website(url: "https://openai.com")),
+    RadialMenuItem(title: "Paste", systemImage: "doc.on.clipboard.fill", action: .pasteText("hello")),
+    RadialMenuItem(
+        title: "系统设置",
+        systemImage: "macwindow",
+        action: .systemApplication(path: "/System/Applications/System Settings.app")
+    ),
+]
+let radialData = try JSONEncoder().encode(radialPayload)
+let decodedRadialPayload = try JSONDecoder().decode([RadialMenuItem].self, from: radialData)
+precondition(decodedRadialPayload == radialPayload)
+precondition(RadialMenuAction.defaultAction(for: .folder).kind == .folder)
+precondition(RadialMenuAction.defaultAction(for: .shortcut).kind == .shortcut)
+precondition(RadialMenuAction.defaultAction(for: .unconfigured) == .unconfigured)
+precondition(RadialMenuAction.defaultAction(for: .systemApplication).kind == .systemApplication)
+precondition(!SystemApplicationCatalog.applications.isEmpty)
 precondition(CodexKeybindingResolver.parse("Ctrl+F")?.displayName == "⌃F")
 precondition(CodexKeybindingResolver.parse("Ctrl+Shift+D")?.displayName == "⌃⇧D")
 precondition(CodexKeybindingResolver.parse("Ctrl+=")?.keyCode == 24)
@@ -422,5 +487,52 @@ precondition(ToolboxAction.allCases.filter { $0.category == .git }.count == 7)
 let prSearchResults = ToolboxAction.allCases.filter { $0.searchText.contains("pr") }.map(\.title)
 precondition(prSearchResults.contains("创建 PR"))
 precondition(prSearchResults.contains("审查 PR"))
+
+let chatGPTProfile = RadialMenuDefaults.chatGPTProfile()
+precondition(chatGPTProfile.isDefault)
+precondition(chatGPTProfile.bundleIdentifier == "com.openai.chat")
+precondition(chatGPTProfile.items.count == RadialMenuDefaults.items.count)
+let encodedRadialProfile = try JSONEncoder().encode(chatGPTProfile)
+let decodedRadialProfile = try JSONDecoder().decode(RadialMenuProfile.self, from: encodedRadialProfile)
+precondition(decodedRadialProfile == chatGPTProfile)
+let safariItem = RadialMenuItem(title: "Safari 搜索", systemImage: "safari.fill", action: .website(url: "https://www.google.com"))
+let safariProfile = RadialMenuProfile(
+    name: "Safari",
+    applicationPath: "/Applications/Safari.app",
+    bundleIdentifier: "com.apple.Safari",
+    items: [safariItem]
+)
+let applicationProfiles = [chatGPTProfile, safariProfile]
+precondition(RadialMenuProfileResolver.items(for: "com.apple.Safari", profiles: applicationProfiles) == [safariItem])
+precondition(RadialMenuProfileResolver.items(for: "com.apple.TextEdit", profiles: applicationProfiles) == chatGPTProfile.items)
+let globalProfile = RadialMenuDefaults.globalProfile()
+precondition(globalProfile.isGlobal)
+precondition(globalProfile.items.count == 8)
+precondition(Set(globalProfile.items.map(\.id)).isDisjoint(with: Set(chatGPTProfile.items.map(\.id))))
+let profilesWithGlobal = [globalProfile] + applicationProfiles
+precondition(
+    RadialMenuProfileResolver.items(
+        for: "com.apple.Safari",
+        profiles: profilesWithGlobal,
+        globalModeEnabled: true
+    ) == globalProfile.items
+)
+precondition(
+    RadialMenuProfileResolver.profile(
+        for: "com.apple.Safari",
+        profiles: profilesWithGlobal,
+        globalModeEnabled: true
+    ) == globalProfile
+)
+let directTrigger = KeyboardShortcutBinding(keyCode: 15, modifiers: [.command, .option], keyLabel: "R")
+let triggeredItem = RadialMenuItem(
+    title: "直接审阅",
+    systemImage: "doc.text.fill",
+    action: .codexToolbox(.reviewChanges),
+    triggerShortcut: directTrigger
+)
+let encodedTriggeredItem = try JSONEncoder().encode(triggeredItem)
+let decodedTriggeredItem = try JSONDecoder().decode(RadialMenuItem.self, from: encodedTriggeredItem)
+precondition(decodedTriggeredItem.triggerShortcut == directTrigger)
 
 print("Codex rollout parser, shortcuts, process output, dial interaction, panel resize, and toolbox catalog: PASS")

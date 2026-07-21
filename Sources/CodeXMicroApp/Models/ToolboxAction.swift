@@ -40,7 +40,7 @@ enum ToolboxActionKind: String, Sendable {
     }
 }
 
-enum ToolboxAction: String, CaseIterable, Identifiable, Sendable {
+enum ToolboxAction: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     case fast
     case approve
     case decline

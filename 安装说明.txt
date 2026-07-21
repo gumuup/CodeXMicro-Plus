@@ -1,4 +1,4 @@
-CodeXMicro++ 2.7.0 安装说明 / Installation Guide
+CodeXMicro++ 3.0.0 安装说明 / Installation Guide
 ================================================
 
 系统要求 / Requirements

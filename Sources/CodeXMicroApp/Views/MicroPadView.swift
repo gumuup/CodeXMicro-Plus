@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MicroPadView: View {
@@ -23,6 +24,7 @@ private struct MicroPadSurface: View {
     let closePanel: () -> Void
 
     @Environment(\.microLayoutScale) private var layoutScale
+    @Environment(\.openSettings) private var openSettings
 
     @State private var isToolboxPresented = false
     @State private var hoveredCommand: MicroAction?
@@ -349,7 +351,7 @@ private struct MicroPadSurface: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.7.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "3.0.0"
     }
 
     private var screwHeads: some View {
@@ -382,9 +384,14 @@ private struct MicroPadSurface: View {
             .help(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
             .accessibilityLabel(store.labelsVisible ? "隐藏按键标注" : "显示按键标注")
             .shortcutConfigurable(.toggleLabels, store: store)
-            SettingsLink {
+            Button {
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+            } label: {
                 Image(systemName: "gearshape.fill")
             }
+            .help("打开并聚焦设置")
+            .accessibilityLabel("打开设置")
             Button(action: closePanel) {
                 Image(systemName: "xmark")
             }

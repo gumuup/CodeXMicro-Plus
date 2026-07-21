@@ -89,6 +89,9 @@ struct SettingsView: View {
             QuickLaunchSettingsView(store: store)
                 .tabItem { Label("快速启动", systemImage: "bolt.fill") }
 
+            RadialMenuSettingsView(store: store)
+                .tabItem { Label("轮盘", systemImage: "circle.hexagongrid.fill") }
+
             ShortcutSettingsView(store: store)
                 .tabItem { Label("自定义按键", systemImage: "keyboard") }
 
@@ -103,7 +106,8 @@ struct SettingsView: View {
             .padding(24)
             .tabItem { Label("关于", systemImage: "info.circle") }
         }
-        .frame(width: 580, height: 520)
+        .frame(minWidth: 780, idealWidth: 780, minHeight: 680, idealHeight: 680)
+        .background(SettingsWindowConfigurator())
     }
 }
 
