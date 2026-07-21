@@ -682,15 +682,21 @@ final class ShortcutService {
             uninstallDirectKeyMonitor()
         }
 
-        let eventMask = (CGEventMask(1) << CGEventType.keyDown.rawValue)
-            | (CGEventMask(1) << CGEventType.keyUp.rawValue)
-            | (CGEventMask(1) << CGEventType.flagsChanged.rawValue)
-            | (CGEventMask(1) << CGEventType.leftMouseDown.rawValue)
-            | (CGEventMask(1) << CGEventType.leftMouseUp.rawValue)
-            | (CGEventMask(1) << CGEventType.rightMouseDown.rawValue)
-            | (CGEventMask(1) << CGEventType.rightMouseUp.rawValue)
-            | (CGEventMask(1) << CGEventType.otherMouseDown.rawValue)
-            | (CGEventMask(1) << CGEventType.otherMouseUp.rawValue)
+        let monitoredEventTypes: [CGEventType] = [
+            .keyDown,
+            .keyUp,
+            .flagsChanged,
+            .leftMouseDown,
+            .leftMouseUp,
+            .rightMouseDown,
+            .rightMouseUp,
+            .otherMouseDown,
+            .otherMouseUp,
+        ]
+        var eventMask: CGEventMask = 0
+        for eventType in monitoredEventTypes {
+            eventMask |= CGEventMask(1) << eventType.rawValue
+        }
         guard let eventTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
