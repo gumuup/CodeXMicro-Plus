@@ -882,7 +882,7 @@ private final class LocalShortcutRecorder: ObservableObject {
         isRecording = true
         hidObserverToken = HIDButtonMonitor.shared.addObserver { [weak self] event in
             guard let self, self.isRecording, event.phase == .down,
-                  event.identifier.usage > 3 else { return }
+                  event.identifier.isSafeRawCapture else { return }
             let modifiers = ShortcutModifiers(
                 eventFlagsRawValue: CGEventSource.flagsState(.combinedSessionState).rawValue
             )

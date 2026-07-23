@@ -255,7 +255,7 @@ final class ShortcutService {
         )
 
         if let target = recordingTarget, event.phase == .down {
-            guard event.identifier.usage > 3 else { return }
+            guard event.identifier.isSafeRawCapture else { return }
             recordingTarget = nil
             pendingRecordingModifierKeyCode = nil
             physicalModifierKeyState.reset()
