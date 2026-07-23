@@ -79,7 +79,7 @@ struct KeyboardShortcutBinding: Codable, Hashable, Sendable {
     var isUnsafeUnmodifiedPrimaryMouseButton: Bool {
         guard modifiers.isEmpty else { return false }
         if mouseButton == 0 || mouseButton == 1 { return true }
-        return hidButton?.usage == 1 || hidButton?.usage == 2
+        return hidButton?.isPrimaryMouseButton == true
     }
     var activationMode: ShortcutActivationMode {
         if isHIDButton { return .hidButton }
@@ -126,15 +126,129 @@ struct ShortcutGesture: Hashable, Sendable {
 }
 
 struct HIDButtonIdentifier: Codable, Sendable {
+    static let genericDesktopUsagePage: UInt32 = 0x01
+    static let buttonUsagePage: UInt32 = 0x09
+    static let consumerUsagePage: UInt32 = 0x0C
+    static let mouseUsage: UInt32 = 0x02
+    static let dialUsage: UInt32 = 0x37
+    static let wheelUsage: UInt32 = 0x38
+
     let vendorID: Int
     let productID: Int
+    let usagePage: UInt32
     let usage: UInt32
+    let direction: Int8
+    let deviceUsagePage: UInt32
+    let deviceUsage: UInt32
     let deviceName: String
+
+    init(
+        vendorID: Int,
+        productID: Int,
+        usagePage: UInt32 = HIDButtonIdentifier.buttonUsagePage,
+        usage: UInt32,
+        direction: Int8 = 0,
+        deviceUsagePage: UInt32 = HIDButtonIdentifier.genericDesktopUsagePage,
+        deviceUsage: UInt32 = HIDButtonIdentifier.mouseUsage,
+        deviceName: String
+    ) {
+        self.vendorID = vendorID
+        self.productID = productID
+        self.usagePage = usagePage
+        self.usage = usage
+        self.direction = direction
+        self.deviceUsagePage = deviceUsagePage
+        self.deviceUsage = deviceUsage
+        self.deviceName = deviceName
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case vendorID
+        case productID
+        case usagePage
+        case usage
+        case direction
+        case deviceUsagePage
+        case deviceUsage
+        case deviceName
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        vendorID = try container.decode(Int.self, forKey: .vendorID)
+        productID = try container.decode(Int.self, forKey: .productID)
+        usagePage = try container.decodeIfPresent(UInt32.self, forKey: .usagePage)
+            ?? Self.buttonUsagePage
+        usage = try container.decode(UInt32.self, forKey: .usage)
+        direction = try container.decodeIfPresent(Int8.self, forKey: .direction) ?? 0
+        deviceUsagePage = try container.decodeIfPresent(UInt32.self, forKey: .deviceUsagePage)
+            ?? Self.genericDesktopUsagePage
+        deviceUsage = try container.decodeIfPresent(UInt32.self, forKey: .deviceUsage)
+            ?? Self.mouseUsage
+        deviceName = try container.decodeIfPresent(String.self, forKey: .deviceName) ?? ""
+    }
+
+    var isPrimaryMouseButton: Bool {
+        usagePage == Self.buttonUsagePage
+            && deviceUsagePage == Self.genericDesktopUsagePage
+            && deviceUsage == Self.mouseUsage
+            && usage <= 3
+    }
+
+    var isSafeRawCapture: Bool {
+        !isPrimaryMouseButton
+    }
+
+    static func supportsRawElement(
+        usagePage: UInt32,
+        usage: UInt32,
+        isRelative: Bool,
+        logicalMinimum: Int,
+        logicalMaximum: Int
+    ) -> Bool {
+        guard usage > 0 else { return false }
+        if usagePage == buttonUsagePage {
+            return true
+        }
+        let isBinaryControl = logicalMinimum == 0 && logicalMaximum == 1
+        if usagePage == consumerUsagePage {
+            return isRelative || isBinaryControl
+        }
+        if usagePage == genericDesktopUsagePage {
+            return isRelative && (usage == dialUsage || usage == wheelUsage)
+        }
+        // Vendor pages frequently mix real controls with absolute axes and
+        // device-status fields. Only these two shapes have safe key semantics.
+        return usagePage >= 0xFF00 && (isRelative || isBinaryControl)
+    }
 
     var displayName: String {
         let trimmedName = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefix = trimmedName.isEmpty ? "外接设备" : trimmedName
-        return "\(prefix) · 宏键 \(usage)"
+        return "\(prefix) · \(controlLabel)"
+    }
+
+    private var controlLabel: String {
+        if direction != 0 {
+            let directionLabel = direction > 0 ? "顺时针" : "逆时针"
+            return "旋钮\(directionLabel)"
+        }
+        if usagePage == Self.consumerUsagePage {
+            return switch usage {
+            case 0xB5: "下一首"
+            case 0xB6: "上一首"
+            case 0xCD: "播放/暂停"
+            case 0xE2: "静音"
+            case 0xE9: "音量增加"
+            case 0xEA: "音量降低"
+            default: "媒体控制 \(usage)"
+            }
+        }
+        if usagePage == Self.genericDesktopUsagePage,
+           usage == Self.dialUsage || usage == Self.wheelUsage {
+            return "旋钮"
+        }
+        return "宏键 \(usage)"
     }
 }
 
@@ -142,13 +256,21 @@ extension HIDButtonIdentifier: Hashable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.vendorID == rhs.vendorID
             && lhs.productID == rhs.productID
+            && lhs.usagePage == rhs.usagePage
             && lhs.usage == rhs.usage
+            && lhs.direction == rhs.direction
+            && lhs.deviceUsagePage == rhs.deviceUsagePage
+            && lhs.deviceUsage == rhs.deviceUsage
     }
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(vendorID)
         hasher.combine(productID)
+        hasher.combine(usagePage)
         hasher.combine(usage)
+        hasher.combine(direction)
+        hasher.combine(deviceUsagePage)
+        hasher.combine(deviceUsage)
     }
 }
 

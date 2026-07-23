@@ -313,6 +313,7 @@ precondition(mxMacroButton == renamedMXMacroButton)
 precondition(hidMacroBinding.displayName == "MX Master 3S · 宏键 6")
 precondition(hidMacroBinding.activationMode == .hidButton)
 precondition(hidMacroBinding.gesture == ShortcutGesture(hidButton: renamedMXMacroButton, modifiers: []))
+precondition(!hidMacroBinding.isUnsafeUnmodifiedPrimaryMouseButton)
 let encodedHIDBinding = try JSONEncoder().encode(hidMacroBinding)
 let decodedHIDBinding = try JSONDecoder().decode(
     KeyboardShortcutBinding.self,
@@ -339,6 +340,118 @@ precondition(hidMatcher.handle(
     phase: .up,
     targetsByGesture: hidTargets
 ) == .release(.radialMenu))
+let legacyHIDIdentifierJSON = Data(
+    #"{"vendorID":1133,"productID":45108,"usage":6,"deviceName":"MX Master 3S"}"#.utf8
+)
+let decodedLegacyHIDIdentifier = try JSONDecoder().decode(
+    HIDButtonIdentifier.self,
+    from: legacyHIDIdentifierJSON
+)
+precondition(decodedLegacyHIDIdentifier == mxMacroButton)
+let primaryRawMouseButton = HIDButtonIdentifier(
+    vendorID: 0x046D,
+    productID: 0xB034,
+    usage: 1,
+    deviceName: "MX Master 3S"
+)
+precondition(primaryRawMouseButton.isPrimaryMouseButton)
+precondition(!primaryRawMouseButton.isSafeRawCapture)
+precondition(
+    KeyboardShortcutBinding.hidButton(primaryRawMouseButton, modifiers: [])
+        .isUnsafeUnmodifiedPrimaryMouseButton
+)
+let dialClockwise = HIDButtonIdentifier(
+    vendorID: 0x1234,
+    productID: 0xD100,
+    usagePage: HIDButtonIdentifier.genericDesktopUsagePage,
+    usage: HIDButtonIdentifier.dialUsage,
+    direction: 1,
+    deviceUsagePage: HIDButtonIdentifier.genericDesktopUsagePage,
+    deviceUsage: 0x08,
+    deviceName: "Ulanzi Dial"
+)
+let dialCounterclockwise = HIDButtonIdentifier(
+    vendorID: 0x1234,
+    productID: 0xD100,
+    usagePage: HIDButtonIdentifier.genericDesktopUsagePage,
+    usage: HIDButtonIdentifier.dialUsage,
+    direction: -1,
+    deviceUsagePage: HIDButtonIdentifier.genericDesktopUsagePage,
+    deviceUsage: 0x08,
+    deviceName: "Ulanzi Dial"
+)
+precondition(dialClockwise != dialCounterclockwise)
+precondition(dialClockwise.displayName == "Ulanzi Dial · 旋钮顺时针")
+precondition(dialCounterclockwise.displayName == "Ulanzi Dial · 旋钮逆时针")
+precondition(dialClockwise.isSafeRawCapture)
+let consumerPlayPause = HIDButtonIdentifier(
+    vendorID: 0x1234,
+    productID: 0xD100,
+    usagePage: HIDButtonIdentifier.consumerUsagePage,
+    usage: 0xCD,
+    deviceUsagePage: HIDButtonIdentifier.consumerUsagePage,
+    deviceUsage: 1,
+    deviceName: "Ulanzi Dial"
+)
+precondition(consumerPlayPause.displayName == "Ulanzi Dial · 播放/暂停")
+precondition(consumerPlayPause.isSafeRawCapture)
+precondition(HIDButtonIdentifier.supportsRawElement(
+    usagePage: HIDButtonIdentifier.genericDesktopUsagePage,
+    usage: HIDButtonIdentifier.dialUsage,
+    isRelative: true,
+    logicalMinimum: -127,
+    logicalMaximum: 127
+))
+precondition(!HIDButtonIdentifier.supportsRawElement(
+    usagePage: HIDButtonIdentifier.genericDesktopUsagePage,
+    usage: HIDButtonIdentifier.dialUsage,
+    isRelative: false,
+    logicalMinimum: 0,
+    logicalMaximum: 255
+))
+precondition(HIDButtonIdentifier.supportsRawElement(
+    usagePage: 0xFF00,
+    usage: 1,
+    isRelative: false,
+    logicalMinimum: 0,
+    logicalMaximum: 1
+))
+precondition(!HIDButtonIdentifier.supportsRawElement(
+    usagePage: 0xFF00,
+    usage: 2,
+    isRelative: false,
+    logicalMinimum: 0,
+    logicalMaximum: 1023
+))
+var dialMatcher = HIDButtonEventMatcher()
+let dialTargets = [
+    ShortcutGesture(hidButton: dialClockwise, modifiers: []): ShortcutTarget.reasoningUp,
+    ShortcutGesture(hidButton: dialCounterclockwise, modifiers: []): ShortcutTarget.reasoningDown,
+]
+precondition(dialMatcher.handle(
+    button: dialClockwise,
+    modifiers: [],
+    phase: .down,
+    targetsByGesture: dialTargets
+) == .trigger(.reasoningUp))
+precondition(dialMatcher.handle(
+    button: dialClockwise,
+    modifiers: [],
+    phase: .up,
+    targetsByGesture: dialTargets
+) == .release(.reasoningUp))
+precondition(dialMatcher.handle(
+    button: dialCounterclockwise,
+    modifiers: [],
+    phase: .down,
+    targetsByGesture: dialTargets
+) == .trigger(.reasoningDown))
+precondition(dialMatcher.handle(
+    button: dialCounterclockwise,
+    modifiers: [],
+    phase: .up,
+    targetsByGesture: dialTargets
+) == .release(.reasoningDown))
 let encodedMouseBinding = try JSONEncoder().encode(mouseSideButton)
 let decodedMouseBinding = try JSONDecoder().decode(KeyboardShortcutBinding.self, from: encodedMouseBinding)
 precondition(decodedMouseBinding == mouseSideButton)
