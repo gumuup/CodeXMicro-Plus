@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: CodexStore
+    @ObservedObject var clipboardHistory: ClipboardHistoryStore
 
     var body: some View {
         TabView {
@@ -96,6 +97,9 @@ struct SettingsView: View {
 
             RadialMenuSettingsView(store: store)
                 .tabItem { Label("轮盘", systemImage: "circle.hexagongrid.fill") }
+
+            ClipboardSettingsView(store: store, history: clipboardHistory)
+                .tabItem { Label("剪贴板", systemImage: "clipboard.fill") }
 
             ShortcutSettingsView(store: store)
                 .tabItem { Label("自定义按键", systemImage: "keyboard") }

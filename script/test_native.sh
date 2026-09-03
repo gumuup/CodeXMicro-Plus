@@ -23,6 +23,7 @@ cd "$ROOT_DIR"
   Sources/CodeXMicroApp/Models/CodexTask.swift \
   Sources/CodeXMicroApp/Models/WeeklyQuota.swift \
   Sources/CodeXMicroApp/Models/CodexUsageMetric.swift \
+  Sources/CodeXMicroApp/Models/ClipboardHistoryItem.swift \
   Sources/CodeXMicroApp/Models/MicroAction.swift \
   Sources/CodeXMicroApp/Models/KeyboardShortcut.swift \
   Sources/CodeXMicroApp/Models/ToolboxAction.swift \
