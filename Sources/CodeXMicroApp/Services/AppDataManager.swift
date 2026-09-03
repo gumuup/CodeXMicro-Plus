@@ -22,7 +22,9 @@ final class AppDataManager: ObservableObject {
         "shortcutDefaultsVersion",
         "radialMenuItems.v1",
         "radialMenuProfiles.v1",
-        "radialMenuGlobalModeEnabled"
+        "radialMenuGlobalModeEnabled",
+        "clipboardHistory.enabled",
+        "clipboardHistory.retentionDays"
     ]
 
     private var defaultsObserver: NSObjectProtocol?
@@ -320,6 +322,8 @@ final class AppDataManager: ObservableObject {
         requireNumber("fastModeEnabled")
         requireNumber("shortcutDefaultsVersion")
         requireNumber("radialMenuGlobalModeEnabled")
+        requireNumber("clipboardHistory.enabled")
+        requireNumber("clipboardHistory.retentionDays")
 
         if let value = preferences["seenTasks"], !(value is [String: NSNumber]) && !(value is [String: Int64]) {
             invalid.append("seenTasks")

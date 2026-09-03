@@ -126,7 +126,7 @@ final class ShortcutService {
     }
 
     private static let hotKeySignature: OSType = 0x4344_584D
-    private static let systemHotKeyTargets: [ShortcutTarget] = [.quickLaunch, .radialMenu]
+    private static let systemHotKeyTargets: [ShortcutTarget] = [.quickLaunch, .radialMenu, .clipboardHistory]
 
     private var bindings: [ShortcutTarget: KeyboardShortcutBinding] = [:]
     private var recordingTarget: ShortcutTarget?

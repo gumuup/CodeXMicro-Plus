@@ -87,6 +87,7 @@ final class CodexStore: ObservableObject {
     var radialMenuHandler: (() -> Void)?
     var radialMenuReleaseHandler: (() -> Void)?
     var radialMenuPreviewHandler: (([RadialMenuItem]) -> Void)?
+    var clipboardHistoryHandler: (() -> Void)?
 
     init(
         stateService: CodexStateService = CodexStateService(),
@@ -133,6 +134,10 @@ final class CodexStore: ObservableObject {
             if installedDefaultsVersion < 5,
                migratedBindings[.radialMenu] == nil {
                 migratedBindings[.radialMenu] = ShortcutDefaults.bindings[.radialMenu]
+            }
+            if installedDefaultsVersion < 6,
+               migratedBindings[.clipboardHistory] == nil {
+                migratedBindings[.clipboardHistory] = ShortcutDefaults.bindings[.clipboardHistory]
             }
             self.shortcutBindings = migratedBindings
             if installedDefaultsVersion < ShortcutDefaults.currentVersion,
@@ -726,6 +731,7 @@ final class CodexStore: ObservableObject {
             }
             quickLaunchHandler?()
         case .radialMenu: radialMenuHandler?()
+        case .clipboardHistory: clipboardHistoryHandler?()
         case .togglePanelPosition:
             panelPosition = panelPosition == .top ? .bottom : .top
         case .agent1: openTask(at: 0)
@@ -772,7 +778,7 @@ final class CodexStore: ObservableObject {
                 showFeedback("为避免无法正常点击，鼠标左键或右键必须搭配修饰键")
                 return
             }
-            guard ![ShortcutTarget.quickLaunch, .radialMenu].contains(target)
+            guard ![ShortcutTarget.quickLaunch, .radialMenu, .clipboardHistory].contains(target)
                     || !binding.modifiers.isEmpty
                     || binding.isMouse else {
                 shortcutRecordingTarget = nil

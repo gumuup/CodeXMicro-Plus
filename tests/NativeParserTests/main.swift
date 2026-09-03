@@ -116,14 +116,36 @@ precondition(legacyShortcutPayload[.fast] == fastShortcut)
 precondition(ShortcutTarget.agent(at: 0) == .agent1)
 precondition(ShortcutTarget.agent(at: 5) == .agent6)
 precondition(ShortcutTarget.agent(at: 6) == nil)
-precondition(ShortcutTarget.allCases.count == 22)
+precondition(ShortcutTarget.allCases.count == 23)
 precondition(ShortcutTarget.configurablePadCases.count == 19)
 precondition(!ShortcutTarget.configurablePadCases.contains(.quickLaunch))
 precondition(!ShortcutTarget.configurablePadCases.contains(.radialMenu))
+precondition(!ShortcutTarget.configurablePadCases.contains(.clipboardHistory))
 precondition(!ShortcutTarget.configurablePadCases.contains(.togglePanelPosition))
 precondition(ShortcutDefaults.bindings.count == ShortcutTarget.allCases.count)
 precondition(ShortcutDefaults.bindings[.quickLaunch]?.displayName == "⌥Space")
 precondition(ShortcutDefaults.bindings[.radialMenu]?.displayName == "⌃Z")
+precondition(ShortcutDefaults.bindings[.clipboardHistory]?.displayName == "⌃V")
+let clipboardTextItem = ClipboardHistoryItem(
+    id: UUID(uuidString: "7CC5C302-707B-4C62-A856-53B52C73B8B7")!,
+    createdAt: Date(timeIntervalSince1970: 1_786_000_000),
+    sourceApplicationName: "TextEdit",
+    sourceBundleIdentifier: "com.apple.TextEdit",
+    content: .text("CodeXMicro 4.0")
+)
+precondition(clipboardTextItem.searchableText == "CodeXMicro 4.0 TextEdit")
+let clipboardTextData = try JSONEncoder().encode(clipboardTextItem)
+let decodedClipboardTextItem = try JSONDecoder().decode(
+    ClipboardHistoryItem.self,
+    from: clipboardTextData
+)
+precondition(decodedClipboardTextItem == clipboardTextItem)
+let clipboardImageItem = ClipboardHistoryItem(
+    sourceApplicationName: "Preview",
+    sourceBundleIdentifier: "com.apple.Preview",
+    content: .image(Data([0x89, 0x50, 0x4E, 0x47]))
+)
+precondition(clipboardImageItem.searchableText == "图片 Preview")
 precondition(RadialMenuDefaults.items.count == 7)
 precondition(Set(RadialMenuDefaults.items.map(\.id)).count == RadialMenuDefaults.items.count)
 precondition(
@@ -255,6 +277,7 @@ precondition(CodexKeybindingResolver.parse("Cmd+Shift+Left")?.displayName == "�
 precondition(CodexKeybindingResolver.parse("Ctrl+Unknown") == nil)
 precondition(Set(ShortcutDefaults.bindings.values).count == ShortcutDefaults.bindings.count)
 precondition(ShortcutDefaults.bindings[.quickLaunch]?.displayName == "⌥Space")
+precondition(ShortcutDefaults.bindings[.clipboardHistory]?.displayName == "⌃V")
 precondition(ShortcutDefaults.bindings[.togglePanelPosition]?.displayName == "⌃P")
 precondition(ShortcutDefaults.bindings[.fast]?.displayName == "⌃F")
 precondition(ShortcutDefaults.bindings[.approve]?.displayName == "⌃[")

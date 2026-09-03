@@ -43,8 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     let store: CodexStore
+    let clipboardHistory: ClipboardHistoryStore
     private var panel: FloatingPanel?
     private var radialMenuController: RadialMenuPanelController?
+    private var clipboardSidebarController: ClipboardSidebarPanelController?
     private var panelPositionCancellable: AnyCancellable?
     private var shortcutRecordingCancellable: AnyCancellable?
     private var startupTask: Task<Void, Never>?
@@ -54,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         AppDataManager.shared.prepareForLaunch()
         store = CodexStore()
+        clipboardHistory = ClipboardHistoryStore()
         super.init()
         AppDataManager.shared.startObservingUserDefaults()
     }
@@ -62,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         createPanel()
         radialMenuController = RadialMenuPanelController(store: store)
+        clipboardSidebarController = ClipboardSidebarPanelController(history: clipboardHistory)
         store.quickLaunchHandler = { [weak self] in
             self?.togglePanelAtPointer()
         }
@@ -74,6 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.radialMenuPreviewHandler = { [weak self] items in
             self?.radialMenuController?.toggleFromMenuBar(previewItems: items)
         }
+        store.clipboardHistoryHandler = { [weak self] in
+            self?.clipboardSidebarController?.toggle()
+        }
+        clipboardHistory.startMonitoring()
         panelPositionCancellable = store.$panelPosition
             .removeDuplicates()
             .sink { [weak self] position in
@@ -90,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         startupTask?.cancel()
+        clipboardHistory.stopMonitoring()
         try? AppDataManager.shared.saveCurrentPreferences()
     }
 
@@ -121,6 +130,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func toggleRadialMenu() {
         radialMenuController?.toggleFromMenuBar()
+    }
+
+    func toggleClipboardSidebar() {
+        clipboardSidebarController?.toggle()
     }
 
     private func createPanel() {
@@ -288,6 +301,9 @@ struct CodeXMicroApp: App {
             Button("显示快速启动轮盘") {
                 appDelegate.toggleRadialMenu()
             }
+            Button("显示剪贴板侧栏") {
+                appDelegate.toggleClipboardSidebar()
+            }
             Divider()
             SettingsLink { Text("设置…") }
             Divider()
@@ -296,7 +312,7 @@ struct CodeXMicroApp: App {
         }
 
         Settings {
-            SettingsView(store: appDelegate.store)
+            SettingsView(store: appDelegate.store, clipboardHistory: appDelegate.clipboardHistory)
         }
     }
 }

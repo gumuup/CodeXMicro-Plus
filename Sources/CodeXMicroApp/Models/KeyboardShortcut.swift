@@ -661,7 +661,7 @@ struct HIDButtonEventMatcher: Sendable {
 }
 
 enum ShortcutDefaults {
-    static let currentVersion = 5
+    static let currentVersion = 6
 
     static let legacyQuickLaunchBinding = KeyboardShortcutBinding(
         keyCode: 49,
@@ -680,6 +680,7 @@ enum ShortcutDefaults {
             modifiers: .control,
             keyLabel: "Z"
         ),
+        .clipboardHistory: control(keyCode: 9, label: "V"),
         .togglePanelPosition: control(keyCode: 35, label: "P"),
         .fast: control(keyCode: 3, label: "F"),
         .approve: control(keyCode: 33, label: "["),
@@ -722,6 +723,7 @@ enum ShortcutDefaults {
 enum ShortcutTarget: String, CaseIterable, Codable, Hashable, Sendable {
     case quickLaunch
     case radialMenu
+    case clipboardHistory
     case togglePanelPosition
     case agent1, agent2, agent3, agent4, agent5, agent6
     case joystickUp, joystickRight, joystickDown, joystickLeft
@@ -735,13 +737,19 @@ enum ShortcutTarget: String, CaseIterable, Codable, Hashable, Sendable {
     }
 
     static var configurablePadCases: [ShortcutTarget] {
-        allCases.filter { $0 != .quickLaunch && $0 != .radialMenu && $0 != .togglePanelPosition }
+        allCases.filter {
+            $0 != .quickLaunch
+                && $0 != .radialMenu
+                && $0 != .clipboardHistory
+                && $0 != .togglePanelPosition
+        }
     }
 
     var title: String {
         switch self {
         case .quickLaunch: "快速启动"
         case .radialMenu: "轮盘"
+        case .clipboardHistory: "剪贴板侧栏"
         case .togglePanelPosition: "切换悬浮位置"
         case .agent1: "A1"
         case .agent2: "A2"
