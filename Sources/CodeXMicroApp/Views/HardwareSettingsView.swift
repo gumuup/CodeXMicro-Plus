@@ -37,19 +37,7 @@ struct HardwareSettingsView: View {
                         ScrollView {
                             VStack(spacing: 6) {
                                 ForEach(RemoteProfiles.buttons(for: remote)) { button in
-                                    HStack(spacing: 8) {
-                                        Label(button.title, systemImage: button.symbol).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
-                                        if button.remappable {
-                                            Button { selectedButton = button } label: {
-                                                HStack {
-                                                    Text(hardware.targetTitle(for: button, remote: remote)).lineLimit(1)
-                                                    Spacer(minLength: 3)
-                                                    Image(systemName: "chevron.right").font(.caption2)
-                                                }.frame(width: 142)
-                                            }.buttonStyle(.borderless).help("自定义：\(button.title)")
-                                        } else { Text("设备内部功能").font(.caption).foregroundStyle(.secondary) }
-                                    }.padding(.horizontal, 10).padding(.vertical, 8)
-                                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 6))
+                                    mappingRow(button)
                                 }
                             }
                         }
@@ -67,8 +55,7 @@ struct HardwareSettingsView: View {
                 if remote != .mxMaster3s {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("使用遥控器麦克风", isOn: Binding(get: { hardware.configuration.remoteMicrophone.contains(remote) }, set: { hardware.setRemoteMicrophone($0, for: remote) }))
-                        .toggleStyle(.switch).controlSize(.small)
-                    Text("语音键支持任意应用的快捷键或快捷指令，可分别配置按下和松开动作。权限统一在“通用 → 系统权限”管理。")
+                    Text(voiceHelp)
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Text(audioDevice.map { "音频通道：\($0)" } ?? "未检测到虚拟音频设备，可在音频页配置输入与输出。")
@@ -97,7 +84,7 @@ struct HardwareSettingsView: View {
             }
         } message: { Text("将清除此型号当前预设的自定义按键配置，其他预设保留。") }
         .onChange(of: hardware.learnedButton) { _, id in
-            if let id { selectedButton = RemoteProfiles.buttons(for: remote).first { $0.id == id } }
+            if let id, !(remote == .x6 && id == "voice") { selectedButton = RemoteProfiles.buttons(for: remote).first { $0.id == id } }
         }
         .onDisappear { hardware.cancelLearning() }
     }
@@ -132,11 +119,32 @@ struct HardwareSettingsView: View {
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.08)))
     }
+    private var voiceHelp: String {
+        remote == .x6
+            ? "语音键专用于麦克风：按一下持续开麦，再按一下关闭；松开不关麦，不触发快捷键。"
+            : "语音键支持任意应用的快捷键或快捷指令，可分别配置按下和松开动作。权限统一在“通用 → 系统权限”管理。"
+    }
+    private func mappingRow(_ button: RemoteButtonDefinition) -> some View {
+                                    HStack(spacing: 8) {
+                                        Label(button.title, systemImage: button.symbol).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                                        if button.remappable {
+                                            Button { if !(remote == .x6 && button.voiceControlled) { selectedButton = button } } label: {
+                                                HStack {
+                                                    Text(hardware.targetTitle(for: button, remote: remote)).lineLimit(1)
+                                                    Spacer(minLength: 3)
+                                                    Image(systemName: "chevron.right").font(.caption2)
+                                                }.frame(width: 142)
+                                            }.buttonStyle(.borderless).help("自定义：\(button.title)")
+                                        } else { Text("设备内部功能").font(.caption).foregroundStyle(.secondary) }
+                                    }.padding(.horizontal, 10).padding(.vertical, 8)
+                                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 6))
+    }
     private func batteryLabel(_ device: SupportedRemoteID) -> some View {
         HStack(spacing: 5) {
             if hardware.connected.contains(device), let battery = hardware.battery[device] {
                 Image(systemName: battery.charging ? "battery.100percent.bolt" : battery.percent <= 20 ? "battery.25percent" : "battery.75percent")
                 Text("\(battery.percent)%\(battery.charging ? " · 充电中" : "")")
+                    .help(hardware.batteryUpdatedAt[device].map { "最近读取：" + $0.formatted(date: .omitted, time: .standard) + "；设备休眠或重连时保留最近读数。" } ?? "最近一次成功读取的电量")
             } else { Image(systemName: "battery.0percent"); Text(hardware.connected.contains(device) ? "电量未知" : "未连接") }
         }.font(.caption.monospacedDigit()).foregroundStyle(hardware.battery[device].map { $0.percent <= 20 ? Color.orange : Color.green } ?? Color.secondary)
     }

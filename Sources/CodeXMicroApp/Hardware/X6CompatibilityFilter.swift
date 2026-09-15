@@ -63,6 +63,9 @@ final class X6CompatibilityFilter {
         }
         guard keyCodes().contains(code) else { return false }
         let received = ProcessInfo.processInfo.systemUptime
+        // HID normally arrives first: consume immediately in that case. Only
+        // Quartz-first events need the bounded source-identification window.
+        if consumePhysicalEdge(code, down: down, received: received) { return true }
         let box = X6EventBox(event: copy)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { [weak self] in
             if self?.consumePhysicalEdge(code, down: down, received: received) == true { return }

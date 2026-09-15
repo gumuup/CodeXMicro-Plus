@@ -11,7 +11,9 @@ final class HardwareBatteryMonitor {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, 0)
         IOHIDManagerSetDeviceMatchingMultiple(manager, [
             [kIOHIDVendorIDKey: 0x18D1, kIOHIDProductIDKey: 0x9450],
-            [kIOHIDVendorIDKey: 0x1D5A, kIOHIDProductIDKey: 0xC081]
+            [kIOHIDVendorIDKey: 0x1D5A, kIOHIDProductIDKey: 0xC081],
+            [kIOHIDVendorIDKey: 0x046D, kIOHIDProductIDKey: 0xB034],
+            [kIOHIDVendorIDKey: 0x046D, kIOHIDProductIDKey: 0xB043]
         ] as CFArray)
         IOHIDManagerOpen(manager, 0); self.manager = manager
         refresh()
@@ -21,11 +23,11 @@ final class HardwareBatteryMonitor {
         guard let manager, let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return }
         for device in devices {
             let vendor = MXMasterHIDBridge.number(device, kIOHIDVendorIDKey)
-            let remote: SupportedRemoteID = vendor == 0x18D1 ? .chromecast : .x6
+            let remote: SupportedRemoteID = vendor == 0x18D1 ? .chromecast : vendor == 0x046D ? .mxMaster3s : .x6
             guard RemoteMappingStore.shared.connected.contains(remote) else { continue }
             if let value = IOHIDDeviceGetProperty(device, "BatteryPercent" as CFString) as? NSNumber {
                 let charging = (IOHIDDeviceGetProperty(device, "BatteryIsCharging" as CFString) as? NSNumber)?.boolValue ?? false
-                RemoteMappingStore.shared.battery[remote] = PeripheralBattery(percent: value.intValue, charging: charging)
+                RemoteMappingStore.shared.updateBattery(PeripheralBattery(percent: value.intValue, charging: charging), for: remote)
             }
         }
     }

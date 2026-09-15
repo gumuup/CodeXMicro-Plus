@@ -55,12 +55,12 @@ struct AudioSettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Label(audio.isRunning ? "正在混音" : audio.isStarting ? "正在启动…" : "混音已停止", systemImage: audio.isRunning ? "waveform" : "waveform.slash")
                             .foregroundStyle(audio.isRunning ? .green : .secondary)
-                        Text("\(audio.configuration.inputs.count) 路输入 → \(audio.configuration.outputs.count) 路输出")
+                        Text("\(audio.availableConfiguration.inputs.count) 路输入 → \(audio.availableConfiguration.outputs.count) 路输出")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     if audio.isRunning || audio.isStarting { Button("停止混音") { audio.stopMix() } }
-                    else { Button("启动混音") { Task { await audio.startMix() } }.buttonStyle(.borderedProminent) }
+                    else { Button("启动混音") { audio.requestStartMix() }.buttonStyle(.borderedProminent) }
                 }
                 Toggle("监听自己的声音", isOn: Binding(get: { audio.isLocalMonitoring }, set: { audio.setLocalMonitoring($0) }))
                 Text("默认不向耳机或扬声器播放麦克风。需要返听时开启“监听自己的声音”；虚拟音频输出仍可供语音软件使用。停止混音、切换系统输入或重启应用后，监听自动关闭。")
@@ -96,6 +96,11 @@ struct AudioSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { audio.start(); audio.refresh() }
+        .alert("无法启动混音", isPresented: Binding(get: { audio.startFailure != nil }, set: { if !$0 { audio.startFailure = nil } })) {
+            Button("知道了", role: .cancel) { audio.startFailure = nil }
+        } message: {
+            Text(audio.startFailure ?? "请检查输入和输出设备。")
+        }
         .onDisappear { audio.stopInputMonitor() }
         }
     }

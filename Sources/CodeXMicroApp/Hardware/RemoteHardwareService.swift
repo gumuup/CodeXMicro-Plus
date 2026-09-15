@@ -14,7 +14,7 @@ final class RemoteHardwareService {
     func start(store: CodexStore) {
         guard !started else { return }; started = true
         mappings.onAction = { [weak store] action in
-            store?.perform(RadialMenuItem(title: action.summary, systemImage: action.kind.systemImage, action: action))
+            store?.performHardwareAction(action)
         }
         mappings.onConfigurationChanged = { [weak self] in self?.configure() }
         chromecast.onConnectionChanged = { [weak self] connected in self?.connection(.chromecast, connected) }
@@ -25,18 +25,18 @@ final class RemoteHardwareService {
         // X6 reports Search first, then 0xAA for a hold. Upstream consolidates
         // that transition; route one down/up pair to the configurable actions.
         x6.onPhysicalVoiceDown = { [weak self] in
-            guard let self, self.mappings.isEnabled(.x6) else { return }
-            self.mappings.voice(.x6, down: true)
-            if self.mappings.configuration.remoteMicrophone.contains(.x6) { self.voices[.x6]?.openMicrophone() }
+            guard let self, self.mappings.isEnabled(.x6), !self.mappings.editing else { return }
+            if self.mappings.learning == .x6 { self.mappings.voice(.x6, down: true); return }
+            guard self.mappings.learning == nil else { return }
+            if self.mappings.configuration.remoteMicrophone.contains(.x6) {
+                self.voices[.x6]?.toggleMicrophone()
+            }
         }
-        let release: () -> Void = { [weak self] in
-            self?.mappings.voice(.x6, down: false); self?.voices[.x6]?.closeMicrophone()
-        }
-        x6.onShortPress = release; x6.onLongPressEnded = release
+        // X6 key-up does not close the microphone or invoke a release action.
         for remote in SupportedRemoteID.allCases where remote != .mxMaster3s {
             let voice = RemoteVoiceBridge(remote: remote)
             let output = RemoteAudioOutput()
-            voice.onBattery = { [weak self] in self?.mappings.battery[remote] = $0 }
+            voice.onBattery = { [weak self] in self?.mappings.updateBattery($0, for: remote) }
             voice.onStatus = { [weak self] in self?.mappings.status[remote] = $0 }
             voice.onVoice = { [weak self] down in
                 guard let self else { return }
@@ -55,12 +55,13 @@ final class RemoteHardwareService {
     }
     private func connection(_ remote: SupportedRemoteID, _ connected: Bool) {
         if connected { mappings.connected.insert(remote) }
-        else { mappings.connected.remove(remote); mappings.battery[remote] = nil; mappings.releaseAll(for: remote); audio[remote]?.stop() }
+        else { mappings.connected.remove(remote); mappings.releaseAll(for: remote); voices[remote]?.closeMicrophone(); audio[remote]?.stop() }
     }
     private func configure() {
         chromecast.setRemappingEnabled(mappings.isEnabled(.chromecast))
         x6.setRemappingEnabled(mappings.isEnabled(.x6))
         for remote in SupportedRemoteID.allCases where remote != .mxMaster3s {
+            if !mappings.configuration.remoteMicrophone.contains(remote) { voices[remote]?.closeMicrophone(); audio[remote]?.stop() }
             if mappings.isEnabled(remote) { voices[remote]?.start() }
             else { voices[remote]?.stop(); audio[remote]?.stop() }
         }
