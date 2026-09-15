@@ -610,7 +610,7 @@ final class CodexAutomationService {
     }
 }
 
-private extension ShortcutModifiers {
+extension ShortcutModifiers {
     var cgEventFlags: CGEventFlags {
         var flags: CGEventFlags = []
         if contains(.command) { flags.insert(.maskCommand) }

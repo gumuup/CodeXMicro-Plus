@@ -490,6 +490,11 @@ final class CodexStore: ObservableObject {
         !radialItemShortcutRegistrationFailures.contains(itemID)
     }
 
+    func setHardwareEditing(_ active: Bool) {
+        shortcutService.setHardwareEditing(active)
+        setRadialItemShortcutRecording(active)
+    }
+
     func setRadialItemShortcutRecording(_ active: Bool) {
         radialItemShortcutService.setSuspended(active)
         if !active {

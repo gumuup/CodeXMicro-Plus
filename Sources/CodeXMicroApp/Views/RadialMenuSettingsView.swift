@@ -269,51 +269,9 @@ struct RadialMenuSettingsView: View {
     }
 
     private var presetCombinationPicker: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text("预设组合")
-                    .font(.caption.weight(.semibold))
-                Spacer()
-                Text("自动保存 · \(store.selectedRadialPresetIndex + 1)/\(RadialMenuProfile.presetCombinationCount)")
-                    .font(.system(size: 9).monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 3) {
-                ForEach(0..<RadialMenuProfile.presetCombinationCount, id: \.self) { index in
-                    let isSelected = store.selectedRadialPresetIndex == index
-                    Button {
-                        store.selectRadialPreset(at: index)
-                        selection = store.radialMenuItems.first?.id
-                    } label: {
-                        Text("\(index + 1)")
-                            .font(.system(size: 10, weight: isSelected ? .bold : .medium).monospacedDigit())
-                            .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 23)
-                            .background(
-                                isSelected ? Color.accentColor : Color.primary.opacity(0.055),
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            )
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(
-                                        isSelected ? Color.accentColor : Color.primary.opacity(0.08),
-                                        lineWidth: 0.75
-                                    )
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .help("切换到预设组合 \(index + 1)")
-                    .accessibilityLabel("预设组合 \(index + 1)")
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
-                }
-            }
-        }
-        .padding(8)
-        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.75)
+        PresetCombinationPicker(selectedIndex: store.selectedRadialPresetIndex) { index in
+            store.selectRadialPreset(at: index)
+            selection = store.radialMenuItems.first?.id
         }
     }
 
@@ -585,13 +543,14 @@ private struct MiniRadialMenuPreview: View {
     }
 }
 
-private struct RadialMenuItemEditor: View {
+struct RadialMenuItemEditor: View {
     @State private var draft: RadialMenuItem
     @State private var showsIconPicker = false
     @State private var shortcutNames: [String] = []
 
     let item: RadialMenuItem
     let shortcutRegistrationFailed: Bool
+    var hardwareMode = false
     let onShortcutRecordingChanged: (Bool) -> Void
     let canMoveUp: Bool
     let canMoveDown: Bool
@@ -607,7 +566,8 @@ private struct RadialMenuItemEditor: View {
         canMoveDown: Bool,
         onChange: @escaping (RadialMenuItem) -> Void,
         onMove: @escaping (Int) -> Void,
-        onDelete: @escaping () -> Void
+        onDelete: @escaping () -> Void,
+        hardwareMode: Bool = false
     ) {
         _draft = State(initialValue: item)
         self.item = item
@@ -618,6 +578,7 @@ private struct RadialMenuItemEditor: View {
         self.onChange = onChange
         self.onMove = onMove
         self.onDelete = onDelete
+        self.hardwareMode = hardwareMode
     }
 
     var body: some View {
@@ -649,6 +610,7 @@ private struct RadialMenuItemEditor: View {
 
                 actionConfiguration
 
+                if !hardwareMode {
                 HStack {
                     Label("快捷键", systemImage: "command")
                     Spacer()
@@ -662,8 +624,10 @@ private struct RadialMenuItemEditor: View {
                         onRecordingChanged: onShortcutRecordingChanged
                     )
                 }
+                }
             }
 
+            if !hardwareMode {
             Section {
                 HStack {
                     Button { onMove(-1) } label: { Label("上移", systemImage: "arrow.up") }
@@ -681,6 +645,7 @@ private struct RadialMenuItemEditor: View {
                 Text("操作按列表顺序顺时针排列。建议保留 6–10 项，以便形成稳定的方向记忆。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
             }
         }
         .formStyle(.grouped)
@@ -720,7 +685,7 @@ private struct RadialMenuItemEditor: View {
                 LocalShortcutRecorderButton(binding: Binding(
                     get: { binding },
                     set: { draft.action = .keyboardShortcut($0) }
-                ))
+                ), hardwareMode: hardwareMode)
             }
 
         case let .application(path):
@@ -872,14 +837,17 @@ private final class LocalShortcutRecorder: ObservableObject {
     private var monitor: Any?
     private var onStop: (() -> Void)?
     private var hidObserverToken: UUID?
+    private var pendingModifier: UInt16?
 
     func start(
         onStop: (() -> Void)? = nil,
+        keyboardOnly: Bool = false,
         onCapture: @escaping (KeyboardShortcutBinding) -> Void
     ) {
         stop()
         self.onStop = onStop
         isRecording = true
+        if !keyboardOnly {
         hidObserverToken = HIDButtonMonitor.shared.addObserver { [weak self] event in
             guard let self, self.isRecording, event.phase == .down,
                   event.identifier.isSafeRawCapture else { return }
@@ -889,9 +857,20 @@ private final class LocalShortcutRecorder: ObservableObject {
             self.stop()
             onCapture(.hidButton(event.identifier, modifiers: modifiers))
         }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
-            if event.keyCode == 53 {
+            if event.type == .flagsChanged {
+                guard keyboardOnly, let modifier = PhysicalModifierKey(keyCode: event.keyCode) else { return event }
+                if event.modifierFlags.rawValue & UInt(modifier.eventFlagRawValue) != 0 {
+                    self.pendingModifier = event.keyCode
+                } else if self.pendingModifier == event.keyCode {
+                    self.stop()
+                    onCapture(KeyboardShortcutBinding(keyCode: event.keyCode, modifiers: [], keyLabel: modifier.label))
+                }
+                return nil
+            }
+            if event.keyCode == 53 && !keyboardOnly {
                 self.stop()
                 return nil
             }
@@ -915,6 +894,7 @@ private final class LocalShortcutRecorder: ObservableObject {
     func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        pendingModifier = nil
         HIDButtonMonitor.shared.removeObserver(hidObserverToken)
         hidObserverToken = nil
         isRecording = false
@@ -926,6 +906,7 @@ private final class LocalShortcutRecorder: ObservableObject {
 
 private struct LocalShortcutRecorderButton: View {
     @Binding var binding: KeyboardShortcutBinding
+    var hardwareMode = false
     @StateObject private var recorder = LocalShortcutRecorder()
 
     var body: some View {
@@ -933,7 +914,7 @@ private struct LocalShortcutRecorderButton: View {
             if recorder.isRecording {
                 recorder.stop()
             } else {
-                recorder.start { binding = $0 }
+                recorder.start(keyboardOnly: hardwareMode) { binding = $0 }
             }
         } label: {
             Text(recorder.isRecording ? "请按组合键…" : binding.displayName)

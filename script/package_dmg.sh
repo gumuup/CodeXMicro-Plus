@@ -5,8 +5,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 DISPLAY_NAME="CodeXMicro++"
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="${CODEX_MICRO_VERSION:-4.0.0}"
-BUILD_NUMBER="400"
+VERSION="${CODEX_MICRO_VERSION:-5.0.0}"
+BUILD_NUMBER="500"
 MIN_SYSTEM_VERSION="14.0"
 LOCAL_SIGNING_NAME="CodexMicro Local Development"
 LOCAL_SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -87,6 +87,7 @@ chmod +x "$MACOS_DIR/$APP_NAME"
 
 cp "$ROOT_DIR/Sources/CodeXMicroApp/Resources/CodeXMicroHardware.png" "$RESOURCES_DIR/AppIcon.png"
 cp "$ROOT_DIR/Sources/CodeXMicroApp/Resources/CodexMarkReference.png" "$RESOURCES_DIR/CodexMarkReference.png"
+cp "$ROOT_DIR/Sources/CodeXMicroApp/Resources/RemoteImages/"*.png "$RESOURCES_DIR/"
 
 cat >"$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -101,6 +102,10 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
   <key>CFBundleIconFile</key><string>AppIcon.png</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>在你启动音频混合后，采集所选麦克风并发送到你选择的输出设备。</string>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>连接你启用的遥控器，用于自定义语音按键和麦克风输入。</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
@@ -108,6 +113,12 @@ cat >"$CONTENTS/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+mkdir -p "$RESOURCES_DIR/ThirdParty/vRemoter" "$RESOURCES_DIR/ThirdParty/Mouser"
+cp "$ROOT_DIR/ThirdParty/Mouser/"* "$RESOURCES_DIR/ThirdParty/Mouser/"
+cp "$ROOT_DIR/ThirdParty/vRemoter/LICENSE" \
+  "$ROOT_DIR/ThirdParty/vRemoter/THIRD_PARTY_NOTICES.md" \
+  "$RESOURCES_DIR/ThirdParty/vRemoter/"
 
 /usr/bin/xattr -cr "$APP_BUNDLE"
 if [[ -n "${CODEX_MICRO_DEVELOPER_ID:-}" ]]; then
@@ -139,6 +150,7 @@ ln -s /Applications "$STAGING_DIR/应用程序 Applications"
 cp "$ROOT_DIR/安装说明.txt" "$STAGING_DIR/安装说明.txt"
 cp "$ROOT_DIR/LICENSE" "$STAGING_DIR/LICENSE"
 cp "$ROOT_DIR/COMMERCIAL-LICENSE.md" "$STAGING_DIR/COMMERCIAL-LICENSE.md"
+cp "$ROOT_DIR/AUDIO.md" "$ROOT_DIR/HARDWARE.md" "$ROOT_DIR/MX_MASTER_3S.md" "$STAGING_DIR/"
 
 rm -f "$DMG_PATH" "$CHECKSUM_PATH"
 /usr/bin/hdiutil create \

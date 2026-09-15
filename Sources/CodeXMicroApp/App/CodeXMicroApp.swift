@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let store: CodexStore
     let clipboardHistory: ClipboardHistoryStore
+    private let remoteHardware = RemoteHardwareService()
     private var panel: FloatingPanel?
     private var radialMenuController: RadialMenuPanelController?
     private var clipboardSidebarController: ClipboardSidebarPanelController?
@@ -63,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        AudioSettingsStore.shared.start()
         createPanel()
         radialMenuController = RadialMenuPanelController(store: store)
         clipboardSidebarController = ClipboardSidebarPanelController(history: clipboardHistory)
@@ -97,6 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        AudioSettingsStore.shared.stopInputMonitor()
+        AudioSettingsStore.shared.stopMix()
+        remoteHardware.stop()
         startupTask?.cancel()
         clipboardHistory.stopMonitoring()
         try? AppDataManager.shared.saveCurrentPreferences()
@@ -186,6 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let currentPID = ProcessInfo.processInfo.processIdentifier
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             store.start()
+            remoteHardware.start(store: store)
             return
         }
 
@@ -194,6 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard !duplicateInstances.isEmpty else {
             store.start()
+            remoteHardware.start(store: store)
             return
         }
 
@@ -223,6 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(for: .milliseconds(200))
             guard !Task.isCancelled else { return }
             self?.store.start()
+            if let self { self.remoteHardware.start(store: self.store) }
         }
     }
 

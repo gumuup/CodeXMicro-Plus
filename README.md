@@ -12,7 +12,7 @@ CodeXMicro++ 把任务切换、Plan / Goal 模式、推理强度、Agent 状态�
 
 前往 [Releases](https://github.com/gumuup/CodeXMicro-Plus/releases/latest) 下载最新版：
 
-- `CodeXMicro++-4.0.0-universal.dmg`：macOS 通用安装包，支持 Apple Silicon 与 Intel Mac。
+- `CodeXMicro++-5.0.0-universal.dmg`：macOS 通用安装包，支持 Apple Silicon 与 Intel Mac。
 - `.sha256`：对应文件的 SHA-256 校验值。
 
 系统要求：
@@ -31,6 +31,17 @@ CodeXMicro++ 把任务切换、Plan / Goal 模式、推理强度、Agent 状态�
 为确保 Fast、Plan 和推理强度等快捷操作可用，请把 [`codex-keybindings.json`](codex-keybindings.json) 中的条目合并到 `~/.codex/keybindings.json`，并保留你原有的自定义快捷键。
 
 辅助功能权限用于接管你主动映射的物理键盘或鼠标按键，并向本机 Codex 发送对应操作。事件只在内存中与已配置的按键和修饰键比较，未命中内容不记录、不上传。
+
+## 5.0.0 功能更新
+
+- **硬件控制中心**：新增“硬件”设置页，支持 Chromecast Voice Remote、X6 Remote 与 MX Master 3S，按型号显示连接、电量、输入状态和设备图。
+- **自由按键映射**：遥控器与鼠标按键可映射到快捷键、应用、系统应用、插件、网址、文本、文件夹、快捷指令及 Codex 工具箱动作，并支持独立的按下/松开动作和按住释放语义。
+- **十组硬件预设**：每个型号独立保存 10 组映射；切换预设会结束学习并释放已按住的目标键，旧配置自动迁移到第 1 组。
+- **X6 兼容恢复**：独占访问被系统拒绝时自动回退到非独占监听，并加入启动快照、断连重试与短暂事件关联过滤，保留未配置按键的系统原生行为。
+- **遥控器语音**：支持 ATVV 语音报文、ADPCM 解码和遥控器麦克风输入，可输出到 vRemoteDr / BlackHole 等虚拟音频设备；不保存录音。
+- **系统音频中心**：新增音频设备发现、默认输入/输出切换、系统音量与静音同步、真实输入电平测试、多输入混音、独奏/静音、独立输出增益及多输出路由。
+- **权限集中管理**：辅助功能、输入监控、麦克风和蓝牙权限统一在通用设置中显示真实系统状态。
+- **分发完整性**：安装包包含硬件图片、麦克风/蓝牙用途说明、第三方许可和音频/硬件使用文档；应用版本为 5.0.0（构建 500）。
 
 ## 4.0.0 功能更新
 
@@ -288,3 +299,7 @@ codex-keybindings.json             Codex 快捷键配置
 商业授权请联系邮箱 [1142929785@qq.com](mailto:1142929785@qq.com) 或微信 `gumuup`，具体范围见 [商业授权说明](COMMERCIAL-LICENSE.md)。
 
 本项目属于“源码可用（source-available）”，由于限制商业用途，不属于 OSI 定义的开源软件。此前已经按 MIT License 发布的 `v2.6.0` 及更早版本继续适用原许可，新协议不追溯撤销既有授权。
+
+## 5.0 硬件与音频文档
+
+配置方法、依赖和验证边界见 [硬件使用说明](HARDWARE.md)、[MX Master 3S 说明](MX_MASTER_3S.md) 与 [音频使用说明](AUDIO.md)。

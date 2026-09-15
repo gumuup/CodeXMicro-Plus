@@ -13,6 +13,7 @@ let package = Package(
             name: "CodeXMicroApp",
             path: "Sources/CodeXMicroApp",
             exclude: ["Resources"]
-        )
+        ),
+        .testTarget(name: "HardwareTests", dependencies: ["CodeXMicroApp"], path: "tests/HardwareTests")
     ]
 )

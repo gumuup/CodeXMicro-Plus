@@ -237,8 +237,17 @@ final class ShortcutService {
     @discardableResult
     func update(bindings: [ShortcutTarget: KeyboardShortcutBinding]) -> [ShortcutTarget: RegistrationFailure] {
         self.bindings = bindings
-        guard recordingTarget == nil else { return [:] }
+        guard recordingTarget == nil, !hardwareEditing else { return [:] }
         return registerCurrentBindings()
+    }
+
+    private var hardwareEditing = false
+    func setHardwareEditing(_ active: Bool) {
+        hardwareEditing = active
+        releaseSuppressedKeyEvents()
+        physicalModifierKeyState.reset()
+        if active { unregisterSystemHotKeys() }
+        else { _ = registerCurrentBindings() }
     }
 
     func beginRecording(for target: ShortcutTarget) {
@@ -250,6 +259,7 @@ final class ShortcutService {
     }
 
     private func handleHIDButtonEvent(_ event: HIDButtonEvent) {
+        guard !hardwareEditing else { return }
         let modifiers = ShortcutModifiers(
             eventFlagsRawValue: CGEventSource.flagsState(.combinedSessionState).rawValue
         )
@@ -292,6 +302,7 @@ final class ShortcutService {
 
     @discardableResult
     private func handle(_ event: NSEvent) -> Bool {
+        guard !hardwareEditing else { return false }
         guard let target = recordingTarget else { return false }
         guard !event.isARepeat else { return true }
         if event.cgEvent?.getIntegerValueField(.eventSourceUserData) == ShortcutEventMarker.codexAutomation {
@@ -339,6 +350,7 @@ final class ShortcutService {
     }
 
     fileprivate func handleDirectKeyEvent(_ event: DirectKeyEventSnapshot) -> DirectKeyEventDecision {
+        if hardwareEditing { return DirectKeyEventDecision(suppress: false, modifierFlagsToStripRawValue: 0) }
         if event.kind == .tapDisabled {
             releaseSuppressedKeyEvents()
             physicalModifierKeyState.reset()

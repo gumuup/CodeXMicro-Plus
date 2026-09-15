@@ -12,6 +12,9 @@ final class AppDataManager: ObservableObject {
 
     private static let storagePathKey = "appDataStoragePath.v1"
     private static let managedPreferenceKeys = [
+        "audio.mix.v1",
+        "audio.hiddenCards.v1",
+        "hardware.remotes.v1",
         "hapticStrength",
         "keySoundEnabled",
         "panelPosition",
@@ -348,6 +351,16 @@ final class AppDataManager: ObservableObject {
             }
         } else if preferences["radialMenuItems.v1"] != nil {
             invalid.append("radialMenuItems.v1")
+        }
+        if let value = preferences["hardware.remotes.v1"] {
+            if let data = value as? Data {
+                if (try? JSONDecoder().decode(RemoteHardwareConfiguration.self, from: data)) == nil { invalid.append("hardware.remotes.v1") }
+            } else { invalid.append("hardware.remotes.v1") }
+        }
+        if let value = preferences["audio.mix.v1"] {
+            if let data = value as? Data {
+                if (try? JSONDecoder().decode(AudioMixConfiguration.self, from: data)) == nil { invalid.append("audio.mix.v1") }
+            } else { invalid.append("audio.mix.v1") }
         }
         return Array(Set(invalid))
     }
