@@ -168,3 +168,20 @@ private func isolatedStore() -> RemoteMappingStore {
     customEvent.setIntegerValueField(.eventSourceUserData, value: ShortcutEventMarker.codexAutomation)
     #expect(!filter.handle(.keyDown, customEvent))
 }
+
+@MainActor @Test func batteryMissingSamplesPreserveLastSuccessfulReading() {
+    let name = "BatteryCacheTests." + UUID().uuidString
+    let defaults = UserDefaults(suiteName: name)!
+    defer { defaults.removePersistentDomain(forName: name) }
+    let store = RemoteMappingStore(defaults: defaults)
+    store.updateBattery(PeripheralBattery(percent: 68), for: .x6)
+    let time = store.batteryUpdatedAt[.x6]
+    store.updateBattery(nil, for: .x6)
+    store.updateBattery(PeripheralBattery(percent: 255), for: .x6)
+    #expect(store.battery[.x6]?.percent == 68)
+    #expect(store.batteryUpdatedAt[.x6] == time)
+    store.updateBattery(PeripheralBattery(percent: 0, charging: true), for: .x6)
+    #expect(store.battery[.x6]?.percent == 0)
+    #expect(store.battery[.x6]?.charging == true)
+    #expect(store.battery[.mxMaster3s] == nil)
+}

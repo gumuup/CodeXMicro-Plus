@@ -127,3 +127,14 @@ func virtualOutputGraphOpensWithoutCapturingOrPlayingContent() throws {
     #expect(device("vRemoteDr 2ch", kAudioDeviceTransportTypeUSB).isVirtualMixDestination)
     #expect(device("BlackHole 2ch", kAudioDeviceTransportTypeVirtual).isVirtualMixDestination)
 }
+
+@Test func disconnectedDevicesDoNotBlockAvailableMixOrLosePreferences() {
+    let saved = AudioMixConfiguration(inputs: ["mac": .init(), "earpods": .init(solo: true), "remote:x6": .init()], outputs: ["speaker": .init()])
+    let current = saved.availableSubset(inputs: ["mac", "remote:x6"], outputs: ["speaker"])
+    #expect(current.inputs.count == 2)
+    #expect(current.inputs["earpods"] == nil)
+    #expect(current.validationError(availableInputs: ["mac", "remote:x6"], availableOutputs: ["speaker"]) == nil)
+    #expect(saved.inputs["earpods"]?.solo == true)
+    #expect(saved.availableSubset(inputs: [], outputs: ["speaker"]).validationError(availableInputs: [], availableOutputs: ["speaker"]) != nil)
+    #expect(saved.availableSubset(inputs: ["mac", "earpods", "remote:x6"], outputs: ["speaker"]) == saved)
+}

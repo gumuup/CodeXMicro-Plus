@@ -9,6 +9,10 @@ struct AudioMixChannel: Codable, Equatable, Sendable {
 struct AudioMixConfiguration: Codable, Equatable, Sendable {
     var inputs: [String: AudioMixChannel] = [:]
     var outputs: [String: AudioMixChannel] = [:]
+    func availableSubset(inputs availableInputs: Set<String>, outputs availableOutputs: Set<String>) -> Self {
+        Self(inputs: inputs.filter { availableInputs.contains($0.key) },
+             outputs: outputs.filter { availableOutputs.contains($0.key) })
+    }
     func validationError(availableInputs: Set<String>, availableOutputs: Set<String>, feedbackSensitiveUIDs: Set<String> = []) -> String? {
         if inputs.isEmpty { return "请选择至少一个混音输入。" }
         if outputs.isEmpty { return "请选择至少一个混音输出。" }

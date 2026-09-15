@@ -265,6 +265,23 @@ final class CodexStore: ObservableObject {
         }
     }
 
+    /// Device shortcuts and launches must not wait behind Codex UI automation
+    /// (which deliberately waits for animations and refreshes after execution).
+    func performHardwareAction(_ action: RadialMenuAction) {
+        switch action {
+        case .keyboardShortcut, .application, .systemApplication, .website:
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await automation.perform(action)
+                    showFeedback(action.summary)
+                } catch { showFeedback(error.localizedDescription) }
+            }
+        default:
+            perform(RadialMenuItem(title: action.summary, systemImage: action.kind.systemImage, action: action))
+        }
+    }
+
     func perform(_ item: RadialMenuItem) {
         guard item.action != .unconfigured else {
             showFeedback("该轮盘位置尚未配置")

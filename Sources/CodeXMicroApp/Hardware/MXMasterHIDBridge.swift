@@ -188,10 +188,17 @@ final class MXMasterHIDBridge {
             else { store.status[.mxMaster3s] = "部分按键接管失败，请检查是否有其他鼠标映射软件占用。" }
         }
         standard.diverted = diverted
-        if Date().timeIntervalSince(lastBattery) > 30, let batteryFeature {
-            if let params = await session.request(batteryFeature, unifiedBattery ? 1 : 0), let battery = MXMasterProtocol.battery(params) {
-                store.battery[.mxMaster3s] = battery
-            } else { store.battery[.mxMaster3s] = nil }
+        if Date().timeIntervalSince(lastBattery) > 30 {
+            if batteryFeature == nil {
+                batteryFeature = await session.feature(0x1004)
+                unifiedBattery = batteryFeature != nil
+                if batteryFeature == nil { batteryFeature = await session.feature(0x1000) }
+            }
+            if let batteryFeature {
+                if let params = await session.request(batteryFeature, unifiedBattery ? 1 : 0), let battery = MXMasterProtocol.battery(params) {
+                    store.updateBattery(battery, for: .mxMaster3s)
+                }
+            }
             guard !Task.isCancelled else { return }
             // Firmware may clear temporary diversion after sleep; verify and restore on the next tick.
             for cid in diverted {
@@ -204,7 +211,7 @@ final class MXMasterHIDBridge {
     }
     private func receive(_ report: MXMasterProtocol.Report) {
         if report.feature == batteryFeature, report.function == 0 {
-            store.battery[.mxMaster3s] = MXMasterProtocol.battery(report.params); return
+            store.updateBattery(MXMasterProtocol.battery(report.params), for: .mxMaster3s); return
         }
         guard report.feature == feature, report.function == 0 else { return }
         let now = MXMasterProtocol.pressed(report.params).intersection(diverted)
@@ -226,7 +233,7 @@ final class MXMasterHIDBridge {
         }
         store.releaseAll(for: .mxMaster3s)
         session?.close(); session = nil; controls = []; diverted = []; pressed = []; feature = nil; batteryFeature = nil
-        standard.diverted = []; store.connected.remove(.mxMaster3s); store.battery[.mxMaster3s] = nil
+        standard.diverted = []; store.connected.remove(.mxMaster3s)
         store.status[.mxMaster3s] = "未连接；请通过蓝牙或 Logi Bolt 连接 MX Master 3S。"
     }
     func stop() {

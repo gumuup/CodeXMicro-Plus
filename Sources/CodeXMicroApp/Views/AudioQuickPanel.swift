@@ -44,7 +44,7 @@ struct AudioQuickPanel: View {
                         .disabled(page >= pageCount - 1).help("下一组输入")
                 }
                 Button(audio.isRunning || audio.isStarting ? "停止混音" : "启动混音") {
-                    if audio.isRunning || audio.isStarting { audio.stopMix() } else { Task { await audio.startMix() } }
+                    if audio.isRunning || audio.isStarting { audio.stopMix() } else { audio.requestStartMix() }
                 }.buttonStyle(.borderedProminent).controlSize(.small)
             }.buttonStyle(.borderless)
             HStack(alignment: .top, spacing: 12) {
@@ -69,7 +69,9 @@ struct AudioQuickPanel: View {
         let channel = audio.configuration.inputs[source.id]
         let level = audio.inputLevels[source.id] ?? 0
         let otherSolo = audio.configuration.inputs.values.contains { $0.solo } && channel?.solo != true
-        let status = channel == nil ? "未参与混音" : channel?.muted == true ? "已静音" : otherSolo ? "其他通道独奏" : audio.isRunning ? (level > 0.0001 ? "正在收音" : "等待声音") : "等待启动"
+        let mixStatus = channel == nil ? "未参与混音" : channel?.muted == true ? "已静音" : otherSolo ? "其他通道独奏" : audio.isRunning ? (level > 0.0001 ? "正在收音" : "等待声音") : "等待启动"
+        let remote = SupportedRemoteID.allCases.first { AudioMixConfiguration.remoteUID($0) == source.id }
+        let status = remote.flatMap { hardware.status[$0] } ?? mixStatus
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: source.deviceID == nil ? "appletvremote.gen4" : "mic.fill")
@@ -98,7 +100,7 @@ struct AudioQuickPanel: View {
             }.buttonStyle(.bordered).controlSize(.small).disabled(channel == nil)
             Divider()
             HStack(spacing: 4) {
-                Toggle("混音", isOn: Binding(get: { channel != nil }, set: { audio.quickSelect(source.id, input: true, enabled: $0) }))
+                Toggle("参与混音", isOn: Binding(get: { audio.configuration.inputs[source.id] != nil }, set: { audio.quickSelect(source.id, input: true, enabled: $0) }))
                     .toggleStyle(.switch).controlSize(.mini).font(.caption)
                 Spacer(minLength: 0)
                 if let deviceID = source.deviceID {
@@ -123,7 +125,7 @@ struct AudioQuickPanel: View {
                     .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("混合输出").font(.system(size: 13, weight: .semibold))
-                    Text("\(audio.configuration.inputs.count) 路输入 → \(selected.count) 路输出").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(audio.availableConfiguration.inputs.count) 路输入 → \(selected.count) 路输出").font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
             }.frame(height: 42, alignment: .top)

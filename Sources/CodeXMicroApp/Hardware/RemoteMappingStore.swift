@@ -43,6 +43,14 @@ final class RemoteMappingStore: ObservableObject {
     @Published var learning: SupportedRemoteID?
     @Published var learnedButton: String?
     @Published var battery: [SupportedRemoteID: PeripheralBattery] = [:]
+    @Published private(set) var batteryUpdatedAt: [SupportedRemoteID: Date] = [:]
+    func updateBattery(_ reading: PeripheralBattery?, for remote: SupportedRemoteID) {
+        // Missing/invalid samples are not a new battery reading. Voice and HID
+        // channels can reconnect independently without invalidating the last one.
+        guard let reading else { return }
+        battery[remote] = reading
+        batteryUpdatedAt[remote] = Date()
+    }
     @Published var editing = false
     var onConfigurationChanged: (() -> Void)?
     var onAction: ((RadialMenuAction) -> Void)?
@@ -114,6 +122,7 @@ final class RemoteMappingStore: ObservableObject {
     }
 
     func targetTitle(for button: RemoteButtonDefinition, remote: SupportedRemoteID) -> String {
+        if remote == .x6, button.voiceControlled { return "切换麦克风开关" }
         if let mapping = mapping(remote, button.id) { return mapping.action == .unconfigured ? "禁用" : mapping.action.summary }
         if remote == .mxMaster3s { return RemoteProfiles.mxNativeTitle(for: button.id) }
         return button.voiceControlled ? "待配置语音操作" : button.defaultTarget.title
