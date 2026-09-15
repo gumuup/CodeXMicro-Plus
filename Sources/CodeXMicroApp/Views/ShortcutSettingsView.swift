@@ -32,7 +32,7 @@ struct ShortcutSettingsView: View {
                         .foregroundStyle(listeningStatusColor)
                     Spacer()
                     if store.hasKeyBindings && !store.automation.isAccessibilityTrusted {
-                        Button("开启辅助功能权限") { store.requestAccessibility() }
+                        Text("请在通用 → 系统权限中开启").font(.caption).foregroundStyle(.secondary)
                     } else if store.hasKeyBindings && !store.isKeyMonitoringActive {
                         Button("重新启动监听") { store.retryShortcutMonitoring() }
                     }

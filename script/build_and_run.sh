@@ -6,8 +6,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 PROCESS_PATTERN='CodeXMicro\+\+'
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="4.0.0"
-BUILD_NUMBER="400"
+VERSION="5.0.0"
+BUILD_NUMBER="500"
 MIN_SYSTEM_VERSION="14.0"
 SIGNING_NAME="CodexMicro Local Development"
 SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -84,6 +84,7 @@ fi
 rm -rf "$APP_BUNDLE" "$LEGACY_APP_BUNDLE" "$DIST_DIR/CodexMicro++.app" "$DIST_DIR/CodexMicro.app"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
+cp "$ROOT_DIR/Sources/CodeXMicroApp/Resources/RemoteImages/"*.png "$APP_RESOURCES/"
 chmod +x "$APP_BINARY"
 
 if [[ -f "$ROOT_DIR/Sources/CodeXMicroApp/Resources/CodeXMicroHardware.png" ]]; then
@@ -115,6 +116,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$BUILD_NUMBER</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon.png</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>在你启动音频混合后，采集所选麦克风并发送到你选择的输出设备。</string>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>连接你启用的遥控器，用于自定义语音按键和麦克风输入。</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>
@@ -126,6 +131,11 @@ cat >"$INFO_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+
+mkdir -p "$APP_RESOURCES/ThirdParty/vRemoter"
+mkdir -p "$APP_RESOURCES/ThirdParty/Mouser"
+cp "$ROOT_DIR/ThirdParty/Mouser/"* "$APP_RESOURCES/ThirdParty/Mouser/"
+cp "$ROOT_DIR/ThirdParty/vRemoter/LICENSE" "$ROOT_DIR/ThirdParty/vRemoter/THIRD_PARTY_NOTICES.md" "$APP_RESOURCES/ThirdParty/vRemoter/"
 
 /usr/bin/xattr -cr "$APP_BUNDLE"
 /usr/bin/codesign \

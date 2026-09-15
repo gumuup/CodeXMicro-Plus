@@ -73,24 +73,14 @@ struct SettingsView: View {
                 }
 
                 Section("系统权限") {
-                    HStack {
-                        Label(
-                            store.automation.isAccessibilityTrusted ? "辅助功能已授权" : "需要辅助功能权限",
-                            systemImage: store.automation.isAccessibilityTrusted ? "checkmark.shield.fill" : "exclamationmark.shield.fill"
-                        )
-                        .foregroundStyle(store.automation.isAccessibilityTrusted ? .green : .orange)
-                        Spacer()
-                        if !store.automation.isAccessibilityTrusted {
-                            Button("开启辅助功能权限") { store.requestAccessibility() }
-                        }
-                    }
-                    Text("权限用于接管你主动映射的物理键盘或鼠标按键，并向本机 Codex 发送操作；不保存或上传其他输入数据。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    SystemPermissionsView(store: store)
                 }
             }
             .formStyle(.grouped)
             .tabItem { Label("通用", systemImage: "slider.horizontal.3") }
+
+            AudioSettingsView(store: store)
+                .tabItem { Label("音频", systemImage: "speaker.wave.2.fill") }
 
             QuickLaunchSettingsView(store: store)
                 .tabItem { Label("快速启动", systemImage: "bolt.fill") }
@@ -106,6 +96,9 @@ struct SettingsView: View {
 
             DataSettingsView()
                 .tabItem { Label("数据", systemImage: "externaldrive.fill") }
+
+            HardwareSettingsView(store: store)
+                .tabItem { Label("硬件", systemImage: "appletvremote.gen4") }
 
             VStack(alignment: .leading, spacing: 12) {
                 Label("CodeXMicro++", systemImage: "keyboard")
