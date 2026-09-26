@@ -17,7 +17,7 @@ final class AudioSettingsStore: ObservableObject {
     private var activeMix: AudioMixConfiguration?
     var availableConfiguration: AudioMixConfiguration {
         let remoteUIDs = SupportedRemoteID.allCases.filter {
-            $0 != .mxMaster3s && RemoteMappingStore.shared.connected.contains($0)
+            $0.hasRemoteAudio && RemoteMappingStore.shared.connected.contains($0)
         }.map(AudioMixConfiguration.remoteUID)
         return configuration.availableSubset(inputs: Set(inputs.map(\.uid)).union(remoteUIDs),
                                              outputs: Set(outputDevices.map(\.uid)))
@@ -129,13 +129,43 @@ final class AudioSettingsStore: ObservableObject {
         stopMix(); refresh()
         var inputs: [String: AudioMixChannel] = [:]
         if let builtin = self.inputs.first(where: { $0.transport == kAudioDeviceTransportTypeBuiltIn }) { inputs[builtin.uid] = AudioMixChannel() }
-        for remote in SupportedRemoteID.allCases where remote != .mxMaster3s && RemoteMappingStore.shared.connected.contains(remote) {
+        for remote in SupportedRemoteID.allCases where remote.hasRemoteAudio && RemoteMappingStore.shared.connected.contains(remote) {
             inputs[AudioMixConfiguration.remoteUID(remote)] = AudioMixChannel()
         }
         let loopback = outputDevices.first { $0.isLoopback && $0.inputChannels > 0 && !inputs.keys.contains($0.uid) }
         configuration = AudioMixConfiguration(inputs: inputs, outputs: loopback.map { [$0.uid: AudioMixChannel()] } ?? [:])
         save()
         message = loopback == nil ? "已选择内置和已连接遥控器，请再选择混音输出设备。" : "已准备内置麦克风与遥控器混音。请确认硬件页已启用遥控器麦克风，再启动混音。"
+    }
+
+    var hasX6WeChatRoute: Bool {
+        guard isRunning, activeMix?.inputs[AudioMixConfiguration.remoteUID(.x6)] != nil else { return false }
+        return outputDevices.contains { $0.name == "vRemoteDr 2ch" && activeMix?.outputs[$0.uid] != nil }
+    }
+    /// Keep the user's channel controls and other routes, adding only the requested voice path.
+    func prepareX6WeChatMix() async -> Bool {
+        refresh()
+        guard let device = outputDevices.first(where: { $0.name == "vRemoteDr 2ch" && $0.inputChannels > 0 }) else {
+            message = "未找到 vRemoteDr 2ch，请检查虚拟音频驱动。"; return false
+        }
+        guard RemoteMappingStore.shared.connected.contains(.x6) else {
+            message = "X6 尚未连接。"; return false
+        }
+        if !hasX6WeChatRoute {
+            stopMix()
+            configuration.inputs.removeValue(forKey: device.uid) // Prevent loopback feedback.
+            let uid = AudioMixConfiguration.remoteUID(.x6)
+            if configuration.inputs[uid] == nil { configuration.inputs[uid] = AudioMixChannel() }
+            if configuration.outputs[device.uid] == nil { configuration.outputs[device.uid] = AudioMixChannel() }
+            save()
+            await startMix()
+        }
+        guard !Task.isCancelled, hasX6WeChatRoute else { return false }
+        do {
+            try SystemAudioDevices.setDefault(device.id, selector: kAudioHardwarePropertyDefaultInputDevice)
+            refresh()
+            return true
+        } catch { message = error.localizedDescription; return false }
     }
 
     func setCardHidden(_ hidden: Bool, uid: String) {
@@ -207,7 +237,7 @@ final class AudioSettingsStore: ObservableObject {
         guard !isRunning, !isStarting else { return }
         refresh(); message = nil
         let remotes = RemoteMappingStore.shared
-        let remoteUIDs = Set(SupportedRemoteID.allCases.filter { $0 != .mxMaster3s && remotes.connected.contains($0) }.map(AudioMixConfiguration.remoteUID))
+        let remoteUIDs = Set(SupportedRemoteID.allCases.filter { $0.hasRemoteAudio && remotes.connected.contains($0) }.map(AudioMixConfiguration.remoteUID))
         let mix = availableConfiguration
         if let error = mix.validationError(availableInputs: Set(inputs.map(\.uid)).union(remoteUIDs), availableOutputs: Set(outputDevices.map(\.uid)), feedbackSensitiveUIDs: Set(devices.filter(\.isLoopback).map(\.uid))) { message = error; return }
         let skipped = configuration.inputs.count + configuration.outputs.count - mix.inputs.count - mix.outputs.count

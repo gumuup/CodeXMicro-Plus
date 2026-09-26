@@ -5,8 +5,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 DISPLAY_NAME="CodeXMicro++"
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="${CODEX_MICRO_VERSION:-5.1.0}"
-BUILD_NUMBER="510"
+VERSION="${CODEX_MICRO_VERSION:-6.0.0}"
+BUILD_NUMBER="600"
 MIN_SYSTEM_VERSION="14.0"
 LOCAL_SIGNING_NAME="CodexMicro Local Development"
 LOCAL_SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -115,6 +115,8 @@ cat >"$CONTENTS/Info.plist" <<PLIST
 PLIST
 
 mkdir -p "$RESOURCES_DIR/ThirdParty/vRemoter" "$RESOURCES_DIR/ThirdParty/Mouser"
+mkdir -p "$RESOURCES_DIR/ThirdParty/DJIMic"
+cp "$ROOT_DIR/ThirdParty/DJIMic/"* "$RESOURCES_DIR/ThirdParty/DJIMic/"
 cp "$ROOT_DIR/ThirdParty/Mouser/"* "$RESOURCES_DIR/ThirdParty/Mouser/"
 cp "$ROOT_DIR/ThirdParty/vRemoter/LICENSE" \
   "$ROOT_DIR/ThirdParty/vRemoter/THIRD_PARTY_NOTICES.md" \
@@ -150,7 +152,7 @@ ln -s /Applications "$STAGING_DIR/应用程序 Applications"
 cp "$ROOT_DIR/安装说明.txt" "$STAGING_DIR/安装说明.txt"
 cp "$ROOT_DIR/LICENSE" "$STAGING_DIR/LICENSE"
 cp "$ROOT_DIR/COMMERCIAL-LICENSE.md" "$STAGING_DIR/COMMERCIAL-LICENSE.md"
-cp "$ROOT_DIR/AUDIO.md" "$ROOT_DIR/HARDWARE.md" "$ROOT_DIR/MX_MASTER_3S.md" "$STAGING_DIR/"
+cp "$ROOT_DIR/AUDIO.md" "$ROOT_DIR/HARDWARE.md" "$ROOT_DIR/MX_MASTER_3S.md" "$ROOT_DIR/NUT65.md" "$STAGING_DIR/"
 
 rm -f "$DMG_PATH" "$CHECKSUM_PATH"
 /usr/bin/hdiutil create \

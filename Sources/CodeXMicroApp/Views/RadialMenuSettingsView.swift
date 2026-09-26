@@ -551,6 +551,7 @@ struct RadialMenuItemEditor: View {
     let item: RadialMenuItem
     let shortcutRegistrationFailed: Bool
     var hardwareMode = false
+    @Binding var hardwareNativeDefault: Bool
     let onShortcutRecordingChanged: (Bool) -> Void
     let canMoveUp: Bool
     let canMoveDown: Bool
@@ -567,7 +568,8 @@ struct RadialMenuItemEditor: View {
         onChange: @escaping (RadialMenuItem) -> Void,
         onMove: @escaping (Int) -> Void,
         onDelete: @escaping () -> Void,
-        hardwareMode: Bool = false
+        hardwareMode: Bool = false,
+        hardwareNativeDefault: Binding<Bool> = .constant(false)
     ) {
         _draft = State(initialValue: item)
         self.item = item
@@ -579,6 +581,7 @@ struct RadialMenuItemEditor: View {
         self.onMove = onMove
         self.onDelete = onDelete
         self.hardwareMode = hardwareMode
+        self._hardwareNativeDefault = hardwareNativeDefault
     }
 
     var body: some View {
@@ -602,13 +605,34 @@ struct RadialMenuItemEditor: View {
             }
 
             Section("操作") {
+                if hardwareMode {
+                    Picker("类型", selection: Binding<String>(
+                        get: { hardwareNativeDefault ? "native-default" : draft.action.kind.rawValue },
+                        set: { value in
+                            if value == "native-default" { hardwareNativeDefault = true }
+                            else if let kind = RadialMenuActionKind(rawValue: value) {
+                                hardwareNativeDefault = false
+                                kindBinding.wrappedValue = kind
+                            }
+                        })) {
+                        Label("原生默认", systemImage: "arrow.uturn.backward").tag("native-default")
+                        ForEach(RadialMenuActionKind.allCases) { kind in
+                            Label(kind.title, systemImage: kind.systemImage).tag(kind.rawValue)
+                        }
+                    }
+                } else {
                 Picker("类型", selection: kindBinding) {
                     ForEach(RadialMenuActionKind.allCases) { kind in
                         Label(kind.title, systemImage: kind.systemImage).tag(kind)
                     }
                 }
+                }
 
-                actionConfiguration
+                if hardwareMode && hardwareNativeDefault {
+                    Text("保存后清除此键的自定义按下／松开操作，恢复该设备在本应用中的默认行为。").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    actionConfiguration
+                }
 
                 if !hardwareMode {
                 HStack {

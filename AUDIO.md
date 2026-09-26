@@ -1,4 +1,4 @@
-# 5.0 音频设置
+# 音频设置
 
 设置工具栏中的 **音频** 位于「通用」之后。
 
@@ -52,3 +52,11 @@
 - `./script/build_and_run.sh --verify`：5.0 构建和启动通过。
 - 2026-09-15 实机验证：MacBook Air 麦克风与 DJI Mic Mini 2-E7DCC2（蓝牙）同时采集到真实电平，输出至 vRemoteDr 2ch；DJI 独奏正常，输出静音后输出电平归零而输入继续更新。测试后已停止采集。
 - UI 已验证勾选隐藏后 DJI 顶部卡片消失，混音选择保持；取消隐藏恢复。浅色布局已实机核对，深色使用系统语义颜色；蓝牙延迟和第三方语音软件识别效果未测量。
+
+### 微信语音联动与驱动读回验证（2026-09-16）
+
+开启 X6 微信联动后，物理语音键可准备并启动混音；普通设备选择操作仍只保存配置。微信输入法需单独选择 vRemoteDr 2ch，不能仅依赖系统默认输入。
+
+`CODEXMICRO_AUDIO_IO_SMOKE=1 CODEXMICRO_LOOPBACK_TEST=1 swift test`：32 项通过。使用实际 AudioMixOutput 写入测试信号、AudioDeviceCapture 从 vRemoteDr 2ch 读回：输入 RMS 0.0292，输出静音后 RMS 0。测试信号仅发送至虚拟设备。
+
+本机最终安装版 UI 验证：混音显示「2 路输入 → 1 路输出」，输出为 vRemoteDr 2ch；内置麦克风实时电平约 −33 dB，输出约 −26 dB。切换输出静音后输出为 −∞ dB、输入继续更新，取消静音后恢复。微信输入法已单独选择 vRemoteDr 2ch。

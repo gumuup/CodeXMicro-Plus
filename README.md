@@ -12,7 +12,7 @@ CodeXMicro++ 把任务切换、Plan / Goal 模式、推理强度、Agent 状态�
 
 前往 [Releases](https://github.com/gumuup/CodeXMicro-Plus/releases/latest) 下载最新版：
 
-- `CodeXMicro++-5.1.0-universal.dmg`：macOS 通用安装包，支持 Apple Silicon 与 Intel Mac。
+- `CodeXMicro++-6.0.0-universal.dmg`：macOS 通用安装包，支持 Apple Silicon 与 Intel Mac。
 - `.sha256`：对应文件的 SHA-256 校验值。
 
 系统要求：
@@ -31,6 +31,14 @@ CodeXMicro++ 把任务切换、Plan / Goal 模式、推理强度、Agent 状态�
 为确保 Fast、Plan 和推理强度等快捷操作可用，请把 [`codex-keybindings.json`](codex-keybindings.json) 中的条目合并到 `~/.codex/keybindings.json`，并保留你原有的自定义快捷键。
 
 辅助功能权限用于接管你主动映射的物理键盘或鼠标按键，并向本机 Codex 发送对应操作。事件只在内存中与已配置的按键和修饰键比较，未命中内容不记录、不上传。
+
+## 6.0.0 功能更新
+
+- **NUT65 板载改键**：有线 USB 模式下读取键盘全部层与实体键位，支持普通键、修饰键、媒体键和 Fn 层映射；每次单键写入前备份完整配置，写后双重回读核验。Mac 基础层默认选为层 2，并提供需主动聚焦的实体按键测试区。详情见 [NUT65.md](NUT65.md)。
+- **DJI Mic Mini 2 接收器按键**：新增 USB 接收器 HID 适配，仅连接键单击支持自定义 Mac 动作；其他手势和原生功能只读展示。蓝牙音频设备和 USB 按键连接分别显示，避免误判；实体接收器按键仍需实机验证。
+- **X6 与微信输入法联动**：可选在语音键松开且音频已进入虚拟混音通道后，向微信输入法发送一次 `⌃I`；保留其他混音通道设置，避免同名虚拟设备形成回路。
+- **音频诊断与界面**：新增输入电平诊断和低音量 440 Hz 输出测试；硬件卡片支持拖动排序。诊断不保存录音，输出测试需用户主动触发。
+- **发布完整性**：应用、Codex 客户端标识、安装说明和通用 DMG 统一为 6.0.0（构建 600），安装包附带 NUT65 文档与 DJI 第三方许可声明。
 
 ## 5.1.0 功能更新
 
