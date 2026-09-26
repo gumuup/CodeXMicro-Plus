@@ -7,6 +7,9 @@ enum SupportedRemoteID: String, CaseIterable, Identifiable, Codable, Sendable {
     case chromecast
     case x6
     case mxMaster3s
+    case djiMicMini2
+
+    var hasRemoteAudio: Bool { self == .chromecast || self == .x6 }
 
     var id: String { rawValue }
 
@@ -15,6 +18,7 @@ enum SupportedRemoteID: String, CaseIterable, Identifiable, Codable, Sendable {
         case .chromecast: "Chromecast Voice Remote"
         case .x6: "X6 Remote"
         case .mxMaster3s: "MX Master 3S"
+        case .djiMicMini2: "DJI Mic Mini 2"
         }
     }
 
@@ -23,6 +27,7 @@ enum SupportedRemoteID: String, CaseIterable, Identifiable, Codable, Sendable {
         case .chromecast: "18D1 · 9450"
         case .x6: "1D5A · C081"
         case .mxMaster3s: "046D · 蓝牙 / Bolt"
+        case .djiMicMini2: "2CA3 · 4011 · USB"
         }
     }
 }
@@ -94,6 +99,30 @@ enum RemoteProfiles {
         case .chromecast: chromecastButtons
         case .x6: x6Buttons
         case .mxMaster3s: mxButtons
+        case .djiMicMini2: djiButtons
+        }
+    }
+
+    // DJI Mic Mini 2 manual v1.0: firmware behavior, not synthesized Mac actions.
+    static func djiNativeTitle(for id: String) -> String {
+        switch id {
+        case "link.single": "开始／停止录像（兼容设备）"
+        case "link.double": "切换蓝牙/接收器模式"
+        case "link.long": "配对（长按 2 秒）"
+        case "power.double": "开启／关闭降噪"
+        case "power.long": "开机／关机（长按 2 秒）"
+        default: "原生未定义"
+        }
+    }
+
+    static let djiButtons: [RemoteButtonDefinition] = ["link", "power"].flatMap { (key: String) -> [RemoteButtonDefinition] in
+        let gestures = key == "link"
+            ? [("single", "单击"), ("double", "双击"), ("long", "长按")]
+            : [("double", "双击"), ("long", "长按")]
+        return gestures.map { gesture, title in
+            .init(id: "\(key).\(gesture)", title: "\(key == "link" ? "连接键" : "电源键") · \(title)",
+                  symbol: key == "link" ? "link" : "power", defaultTarget: .disabled,
+                  remappable: key == "link" && gesture == "single")
         }
     }
 

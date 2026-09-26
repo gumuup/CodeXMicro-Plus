@@ -6,8 +6,8 @@ APP_NAME="CodeXMicro++"
 BUILD_PRODUCT="CodeXMicro"
 PROCESS_PATTERN='CodeXMicro\+\+'
 BUNDLE_ID="com.gumu.codexmicro.virtual"
-VERSION="5.1.0"
-BUILD_NUMBER="510"
+VERSION="6.0.0"
+BUILD_NUMBER="600"
 MIN_SYSTEM_VERSION="14.0"
 SIGNING_NAME="CodexMicro Local Development"
 SIGNING_DIR="${CODEX_MICRO_SIGNING_DIR:-$HOME/Library/Application Support/CodexMicro/Signing}"
@@ -134,6 +134,8 @@ PLIST
 
 mkdir -p "$APP_RESOURCES/ThirdParty/vRemoter"
 mkdir -p "$APP_RESOURCES/ThirdParty/Mouser"
+mkdir -p "$APP_RESOURCES/ThirdParty/DJIMic"
+cp "$ROOT_DIR/ThirdParty/DJIMic/"* "$APP_RESOURCES/ThirdParty/DJIMic/"
 cp "$ROOT_DIR/ThirdParty/Mouser/"* "$APP_RESOURCES/ThirdParty/Mouser/"
 cp "$ROOT_DIR/ThirdParty/vRemoter/LICENSE" "$ROOT_DIR/ThirdParty/vRemoter/THIRD_PARTY_NOTICES.md" "$APP_RESOURCES/ThirdParty/vRemoter/"
 
@@ -150,9 +152,14 @@ LAUNCHED_PID=""
 open_app() {
   # Launch the exact staged bundle so SwiftUI receives normal macOS app
   # lifecycle handling instead of being auto-terminated as a raw executable.
-  /usr/bin/open -n "$APP_BUNDLE"
+  /usr/bin/open -n -a "$APP_BUNDLE"
   for _ in {1..20}; do
-    LAUNCHED_PID="$(pgrep -x "$PROCESS_PATTERN" | /usr/bin/tail -n 1 || true)"
+    while IFS= read -r candidate; do
+      if [[ "$(/bin/ps -p "$candidate" -o args= 2>/dev/null)" == "$APP_BINARY" ]]; then
+        LAUNCHED_PID="$candidate"
+        break
+      fi
+    done < <(pgrep -x "$PROCESS_PATTERN" || true)
     [[ -n "$LAUNCHED_PID" ]] && break
     sleep 0.1
   done
@@ -176,7 +183,8 @@ case "$MODE" in
   --verify|verify)
     open_app
     sleep 3
-    if [[ -z "$LAUNCHED_PID" ]] || ! kill -0 "$LAUNCHED_PID" >/dev/null 2>&1; then
+    if [[ -z "$LAUNCHED_PID" ]] || ! kill -0 "$LAUNCHED_PID" >/dev/null 2>&1 \
+        || [[ "$(/bin/ps -p "$LAUNCHED_PID" -o args= 2>/dev/null)" != "$APP_BINARY" ]]; then
       echo "$APP_NAME failed to stay running from $APP_BUNDLE" >&2
       exit 1
     fi

@@ -19,7 +19,7 @@ struct AudioQuickPanel: View {
             if ($0.transport == kAudioDeviceTransportTypeBuiltIn) != ($1.transport == kAudioDeviceTransportTypeBuiltIn) { return $0.transport == kAudioDeviceTransportTypeBuiltIn }
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }.map { Source(id: $0.uid, title: $0.name, detail: $0.kind, deviceID: $0.id) }
-        for remote in SupportedRemoteID.allCases where remote != .mxMaster3s && hardware.connected.contains(remote) {
+        for remote in SupportedRemoteID.allCases where remote.hasRemoteAudio && hardware.connected.contains(remote) {
             values.append(Source(id: AudioMixConfiguration.remoteUID(remote), title: remote.title, detail: "遥控器麦克风", deviceID: nil))
         }
         return values.filter { !audio.hiddenCardUIDs.contains($0.id) }
@@ -47,6 +47,7 @@ struct AudioQuickPanel: View {
                     if audio.isRunning || audio.isStarting { audio.stopMix() } else { audio.requestStartMix() }
                 }.buttonStyle(.borderedProminent).controlSize(.small)
             }.buttonStyle(.borderless)
+            AudioDiagnosticsView(audio: audio)
             HStack(alignment: .top, spacing: 12) {
                 if visibleSources.isEmpty {
                     VStack(spacing: 12) {

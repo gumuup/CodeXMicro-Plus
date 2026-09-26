@@ -22,7 +22,7 @@ final class RemoteVoiceBridge: NSObject, @preconcurrency CBCentralManagerDelegat
     private var protocolHandler = ATVVProtocol()
     private var active = false
     private var streaming = false
-    private var microphoneRequested = false
+    private(set) var microphoneRequested = false
     private var continuousRestarts = 0
     private var openRetries = 0
     private var openRetry: Task<Void, Never>?

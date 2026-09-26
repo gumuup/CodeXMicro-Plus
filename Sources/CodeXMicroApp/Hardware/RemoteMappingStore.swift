@@ -13,6 +13,7 @@ struct RemoteHardwareConfiguration: Codable {
     var mappings: [String: RemoteButtonMapping] = [:]
     // Optional for backward-compatible decoding of existing 5.0 configurations.
     var presetBanks: [String: HardwarePresetBank]?
+    var x6WeChatVoice: Bool?
 }
 
 struct HardwarePresetBank: Codable {
@@ -80,6 +81,20 @@ final class RemoteMappingStore: ObservableObject {
         if enabled { configuration.remoteMicrophone.insert(remote) } else { configuration.remoteMicrophone.remove(remote) }
         save(); onConfigurationChanged?()
     }
+    var x6WeChatVoiceEnabled: Bool { configuration.x6WeChatVoice == true }
+    func setX6WeChatVoice(_ enabled: Bool) {
+        configuration.x6WeChatVoice = enabled
+        if enabled {
+            configuration.enabled.insert(.x6)
+            configuration.remoteMicrophone.insert(.x6)
+        }
+        save(); onConfigurationChanged?()
+    }
+    func startWeChatVoice() {
+        let binding = KeyboardShortcutBinding(keyCode: 34, modifiers: .control, keyLabel: "I")
+        postKey(binding, down: true)
+        postKey(binding, down: false)
+    }
     func mapping(_ remote: SupportedRemoteID, _ button: String) -> RemoteButtonMapping? {
         configuration.mappings[key(remote, button)]
     }
@@ -122,8 +137,10 @@ final class RemoteMappingStore: ObservableObject {
     }
 
     func targetTitle(for button: RemoteButtonDefinition, remote: SupportedRemoteID) -> String {
-        if remote == .x6, button.voiceControlled { return "切换麦克风开关" }
-        if let mapping = mapping(remote, button.id) { return mapping.action == .unconfigured ? "禁用" : mapping.action.summary }
+        if remote == .djiMicMini2, !button.remappable { return RemoteProfiles.djiNativeTitle(for: button.id) }
+        if remote == .x6, button.voiceControlled { return x6WeChatVoiceEnabled ? "开麦 + 微信语音 ⌃I" : "切换麦克风开关" }
+        if let mapping = mapping(remote, button.id) { return mapping.action == .unconfigured ? (remote == .djiMicMini2 ? "不执行 Mac 操作" : "禁用") : mapping.action.summary }
+        if remote == .djiMicMini2 { return RemoteProfiles.djiNativeTitle(for: button.id) }
         if remote == .mxMaster3s { return RemoteProfiles.mxNativeTitle(for: button.id) }
         return button.voiceControlled ? "待配置语音操作" : button.defaultTarget.title
     }
@@ -140,6 +157,7 @@ final class RemoteMappingStore: ObservableObject {
     func post(button: RemoteButtonDefinition, remote: SupportedRemoteID, isDown: Bool) {
         let id = key(remote, button.id)
         if isDown {
+            if remote == .djiMicMini2, !button.remappable { return }
             lastInput = "\(remote.title) · \(button.title)"
             if learning == remote { learnedButton = button.id; cancelLearning(); return }
             guard !editing, isEnabled(remote), pressed.insert(id).inserted else { return }

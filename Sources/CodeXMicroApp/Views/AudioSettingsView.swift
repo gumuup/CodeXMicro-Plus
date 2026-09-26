@@ -76,7 +76,7 @@ struct AudioSettingsView: View {
                 ForEach(audio.inputs) { device in
                     mixRow(uid: device.uid, title: device.name, detail: device.kind, input: true)
                 }
-                ForEach(SupportedRemoteID.allCases.filter { $0 != .mxMaster3s }) { remote in
+                ForEach(SupportedRemoteID.allCases.filter { $0.hasRemoteAudio }) { remote in
                     let uid = AudioMixConfiguration.remoteUID(remote)
                     if hardware.connected.contains(remote) || audio.configuration.inputs[uid] != nil {
                         mixRow(uid: uid, title: "\(remote.title) 麦克风", detail: hardware.connected.contains(remote) ? "需在硬件页启用遥控器麦克风" : "未连接", input: true)
